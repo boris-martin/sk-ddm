@@ -9,7 +9,7 @@ import gmsh
 
 
 from mesh_helpers import create_square, find_entities_on_domain
-
+import mesh_helpers
 
 create_square(.02, 2)
 
@@ -34,42 +34,9 @@ print(f"Gamma tags: {gamma_tags}")
 print(f"Sigma tags: {sigma_tags}")
 
 
-def buildNodes(surface_tag):
-    gmshNodeTagToCoords = dict()
-    gmshNodeTagToSKFemIndex = dict()
-    ntags, ncoords, _ = gmsh.model.mesh.get_nodes(2, surface_tag, includeBoundary=True)
-    print(f"Number of nodes: {len(ntags)} and coordinates shape: {ncoords.shape}")
-    counter = 0
-    # Iterate over zip of tags and 3 coords
-    for nodeTag, coords in zip(ntags, ncoords.reshape(-1, 3)):
-        gmshNodeTagToCoords[nodeTag] = coords[:2]
-        gmshNodeTagToSKFemIndex[nodeTag] = counter
-        counter += 1
-    assert(len(gmshNodeTagToSKFemIndex) == len(ntags))
-    assert(len(gmshNodeTagToCoords) == len(ntags))
-    # SKFEM node list
-    skfem_points = np.zeros((2, len(ntags)))
-    for gmshTag, skfemIndex in gmshNodeTagToSKFemIndex.items():
-        skfem_points[:, skfemIndex] = gmshNodeTagToCoords[gmshTag]
+skfem_points, gmshToSK = mesh_helpers.buildNodes(omega_tag)
+skfem_elements = mesh_helpers.buildTriangleSet(omega_tag, gmshToSK)
 
-    return skfem_points, gmshNodeTagToSKFemIndex
-
-def buildTriangularMesh(surface_tag, gmshToSK):
-    etypes, _, nodes = gmsh.model.mesh.get_elements(2, surface_tag)
-    # We expect only triangles
-    assert(len(etypes) == 1)
-    assert(etypes[0] == 2)  # triangle
-    triangles = nodes[0].reshape(-1, 3)
-    skfem_elements = np.zeros(triangles.shape, dtype=int)
-    for i in range(triangles.shape[0]):
-        for j in range(3):
-            gmshNodeTag = triangles[i, j]
-            skfemIndex = gmshToSK[gmshNodeTag]
-            skfem_elements[i, j] = skfemIndex
-    return skfem_elements.T
-
-skfem_points, gmshToSK = buildNodes(omega_tag)
-skfem_elements = buildTriangularMesh(omega_tag, gmshToSK)
 center_of_mass = np.mean(skfem_points, axis=1)
 # Index to closest point to center of mass
 distances = np.linalg.norm(skfem_points - center_of_mass[:, np.newaxis], axis=0)

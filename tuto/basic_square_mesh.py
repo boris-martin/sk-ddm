@@ -23,7 +23,7 @@ cl = gmsh.model.geo.addCurveLoop([l1, l2, l3, l4])
 s1 = gmsh.model.geo.addPlaneSurface([cl])
 gmsh.model.geo.synchronize()
 gmsh.model.mesh.generate(2)
-gmsh.model.mesh.partition(2)
+gmsh.model.mesh.partition(5)
 gmsh.write("square.msh")
 
 @BilinearForm
