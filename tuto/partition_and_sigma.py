@@ -8,24 +8,10 @@ import matplotlib.pyplot as plt
 import gmsh
 
 
+from mesh_helpers import create_square, find_entities_on_domain
 
-gmsh.initialize()
-gmsh.model.add("unit-square")
-lc = 0.02
-p1 = gmsh.model.geo.addPoint(0.0, 0.0, 0.0, lc)
-p2 = gmsh.model.geo.addPoint(1.0, 0.0, 0.0, lc)
-p3 = gmsh.model.geo.addPoint(1.0, 1.0, 0.0, lc)
-p4 = gmsh.model.geo.addPoint(0.0, 1.0, 0.0, lc)
-l1 = gmsh.model.geo.addLine(p1, p2)
-l2 = gmsh.model.geo.addLine(p2, p3)
-l3 = gmsh.model.geo.addLine(p3, p4)
-l4 = gmsh.model.geo.addLine(p4, p1)
-cl = gmsh.model.geo.addCurveLoop([l1, l2, l3, l4])
-s1 = gmsh.model.geo.addPlaneSurface([cl])
-gmsh.model.geo.synchronize()
-gmsh.model.mesh.generate(2)
-gmsh.model.mesh.partition(2)
-gmsh.write("square.msh")
+
+create_square(.02, 2)
 
 @BilinearForm
 def helmholtz(u, v, w):
@@ -40,26 +26,8 @@ def source(v, w):
     return v * w['x'][0]
 
 
-target_part = 1
-omega_tag = -1
-gamma_tags = []
-sigma_tags = dict() # j to tag
-
-for dim, tag in  gmsh.model.get_entities(-1):
-    print(f"Dimension: {dim}, Tag: {tag}")
-    pdim, ptag = gmsh.model.getParent(dim, tag)
-    partitions = gmsh.model.getPartitions(dim, tag)
-    if target_part not in partitions:
-        continue
-    if dim == 2 and ptag == 1:
-        omega_tag = tag
-    elif dim == 1:
-        if pdim == 2:
-            assert(len(partitions) == 2)
-            other_part = partitions[0] if partitions[1] == target_part else partitions[1]
-            sigma_tags[other_part] = tag
-        elif pdim == 1:
-            gamma_tags.append(tag)
+target_part = 2
+omega_tag, gamma_tags, sigma_tags = find_entities_on_domain(target_part)
 
 print(f"Omega tag: {omega_tag}")
 print(f"Gamma tags: {gamma_tags}")
