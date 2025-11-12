@@ -78,3 +78,11 @@ def buildTriangleSet(surface_tag, gmshToSK):
             skfemIndex = gmshToSK[gmshNodeTag]
             skfem_elements[i, j] = skfemIndex
     return skfem_elements.T
+
+def buildFacetDict(mesh):
+    facets = mesh.facets
+    facets_dict = dict()
+    for j in range(facets.shape[1]):
+        assert(facets[0, j] < facets[1, j])
+        facets_dict[(facets[0, j], facets[1, j])] = j
+    return facets_dict

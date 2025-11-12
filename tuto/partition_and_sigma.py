@@ -44,11 +44,7 @@ center_idx = np.argmin(distances)
 print(f"Center of mass: {center_of_mass}, closest node index: {center_idx}, coords: {skfem_points[:, center_idx]}")
 
 mesh = MeshTri(skfem_points, skfem_elements)
-facets = mesh.facets
-facets_dict = dict()
-for j in range(facets.shape[1]):
-    assert(facets[0, j] < facets[1, j])
-    facets_dict[(facets[0, j], facets[1, j])] = j
+facets_dict = mesh_helpers.buildFacetDict(mesh)
 
 def findFacetsGamma(gammaTags):
     gamma_facets = []
