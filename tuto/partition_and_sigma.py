@@ -10,8 +10,9 @@ import gmsh
 
 from mesh_helpers import create_square, find_entities_on_domain
 import mesh_helpers
+import plane_wave
 
-create_square(.02, 2)
+create_square(.01, 17)
 
 @BilinearForm
 def helmholtz(u, v, w):
@@ -20,13 +21,13 @@ def helmholtz(u, v, w):
 @BilinearForm(facet=True, dtype=np.complex128)
 def absorbing(u, v, w):
     k = w['k']
-    return np.complex128(1j * k * u * v)
+    return np.complex128(-1j * k * u * v)
 @LinearForm
 def source(v, w):
     return v * w['x'][0]
 
 
-target_part = 2
+target_part = 4
 omega_tag, gamma_tags, sigma_tags = find_entities_on_domain(target_part)
 
 print(f"Omega tag: {omega_tag}")
@@ -60,7 +61,7 @@ basis = skfem.Basis(mesh, ElementTriP1())
 print(all_facets)
 facet_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=all_facets)
 print(facet_basis)
-wavelength = 0.3
+wavelength = 0.5
 k = 2.0 * np.pi / wavelength
 A_bnd = skfem.asm(absorbing, facet_basis, k=k).astype(np.complex128)
 A_vol = skfem.asm(helmholtz, basis, k=k).astype(np.complex128)
@@ -75,6 +76,7 @@ A_vol += A_bnd
 import scipy.sparse.linalg
 b = np.zeros(mesh.nvertices, dtype=np.complex128)
 b[center_idx] = 1.0 + 0.0j
+b = skfem.asm(plane_wave.plane_wave, facet_basis, k=k, theta=0.5).astype(np.complex128)
 plot(mesh, np.real(scipy.sparse.linalg.spsolve(A_vol, b)), shading='gouraud', colorbar=True)
 plt.title("Solution")
 plt.show()
