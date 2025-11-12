@@ -61,7 +61,7 @@ basis = skfem.Basis(mesh, ElementTriP1())
 print(all_facets)
 facet_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=all_facets)
 print(facet_basis)
-wavelength = 0.5
+wavelength = 0.10
 k = 2.0 * np.pi / wavelength
 A_bnd = skfem.asm(absorbing, facet_basis, k=k).astype(np.complex128)
 A_vol = skfem.asm(helmholtz, basis, k=k).astype(np.complex128)
@@ -76,7 +76,12 @@ A_vol += A_bnd
 import scipy.sparse.linalg
 b = np.zeros(mesh.nvertices, dtype=np.complex128)
 b[center_idx] = 1.0 + 0.0j
-b = skfem.asm(plane_wave.plane_wave, facet_basis, k=k, theta=0.5).astype(np.complex128)
-plot(mesh, np.real(scipy.sparse.linalg.spsolve(A_vol, b)), shading='gouraud', colorbar=True)
+theta = 0.0
+b = skfem.asm(plane_wave.plane_wave, facet_basis, k=k, theta=theta).astype(np.complex128)
+x = scipy.sparse.linalg.spsolve(A_vol, b)
+expected_x = plane_wave.plane_wave_value(skfem_points, k, theta)
+error = np.linalg.norm(x - expected_x) / np.linalg.norm(expected_x)
+print("Relative error compared to analytical solution:", error * 100, "%")
+plot(mesh, np.real(x), shading='gouraud', colorbar=True)
 plt.title("Solution")
 plt.show()
