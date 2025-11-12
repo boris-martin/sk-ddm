@@ -103,3 +103,22 @@ def findFacetsGamma(gammaTags: list, gmshToSK: dict, facets_dict: dict):
             facet_idx = facets_dict[(sk_n1, sk_n2)]
             gamma_facets.append(facet_idx)
     return np.array(gamma_facets)
+
+def findFullSigma(sigma_tags, gmshToSK, facets_dict):
+    facets = dict()
+    for j, tag in sigma_tags.items():
+        facets_local = []
+        etypes, _, nodes = gmsh.model.mesh.get_elements(1, tag)
+        assert(len(etypes) == 1)
+        assert(etypes[0] == 1)
+        lines = nodes[0].reshape(-1, 2)
+        for line in lines:
+            n1, n2 = line
+            sk_n1 = gmshToSK[n1]
+            sk_n2 = gmshToSK[n2]
+            if sk_n1 > sk_n2:
+                sk_n1, sk_n2 = sk_n2, sk_n1
+            facet_idx = facets_dict[(sk_n1, sk_n2)]
+            facets_local.append(facet_idx)
+        facets.update({j: facets_local})
+    return facets

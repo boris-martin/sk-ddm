@@ -48,29 +48,11 @@ facets_dict = mesh_helpers.buildFacetDict(mesh)
 
 
 
-def findFullSigma(sigma_tags):
-    facets = dict()
-    for j, tag in sigma_tags.items():
-        facets_local = []
-        etypes, _, nodes = gmsh.model.mesh.get_elements(1, tag)
-        assert(len(etypes) == 1)
-        assert(etypes[0] == 1)
-        lines = nodes[0].reshape(-1, 2)
-        for line in lines:
-            n1, n2 = line
-            sk_n1 = gmshToSK[n1]
-            sk_n2 = gmshToSK[n2]
-            if sk_n1 > sk_n2:
-                sk_n1, sk_n2 = sk_n2, sk_n1
-            facet_idx = facets_dict[(sk_n1, sk_n2)]
-            facets_local.append(facet_idx)
-        facets.update({j: facets_local})
-    return facets
 
 
 
 gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
-sigma_facets = findFullSigma(sigma_tags)
+sigma_facets = mesh_helpers.findFullSigma(sigma_tags, gmshToSK, facets_dict)
 # Concat gamma and sigma
 all_facets = np.concatenate([gamma_facets] + [v for k, v in sigma_facets.items()])
 print("Number of facets for absorbing BC:", len(all_facets))
