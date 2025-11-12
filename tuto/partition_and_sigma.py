@@ -46,22 +46,7 @@ print(f"Center of mass: {center_of_mass}, closest node index: {center_idx}, coor
 mesh = MeshTri(skfem_points, skfem_elements)
 facets_dict = mesh_helpers.buildFacetDict(mesh)
 
-def findFacetsGamma(gammaTags):
-    gamma_facets = []
-    for tag in gammaTags:
-        etypes, _, nodes = gmsh.model.mesh.get_elements(1, tag)
-        assert(len(etypes) == 1)
-        assert(etypes[0] == 1)  # line elements
-        lines = nodes[0].reshape(-1, 2)
-        for line in lines:
-            n1, n2 = line
-            sk_n1 = gmshToSK[n1]
-            sk_n2 = gmshToSK[n2]
-            if sk_n1 > sk_n2:
-                sk_n1, sk_n2 = sk_n2, sk_n1
-            facet_idx = facets_dict[(sk_n1, sk_n2)]
-            gamma_facets.append(facet_idx)
-    return np.array(gamma_facets)
+
 
 def findFullSigma(sigma_tags):
     facets = []
@@ -82,7 +67,7 @@ def findFullSigma(sigma_tags):
 
 
 
-gamma_facets = findFacetsGamma(gamma_tags)
+gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
 sigma_facets = findFullSigma(sigma_tags)
 # Concat gamma and sigma
 all_facets = np.concatenate((gamma_facets, sigma_facets))
