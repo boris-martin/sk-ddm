@@ -55,7 +55,7 @@ facets_dict = mesh_helpers.buildFacetDict(mesh)
 gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
 sigma_facets = mesh_helpers.findFullSigma(sigma_tags, gmshToSK, facets_dict)
 # Concat gamma and sigma
-all_facets = np.concatenate([gamma_facets] + [v for k, v in sigma_facets.items()])
+all_facets = np.concatenate([gamma_facets] + [v for k, v in sigma_facets.items()]).astype(np.int64)
 print("Number of facets for absorbing BC:", len(all_facets))
 basis = skfem.Basis(mesh, ElementTriP1())
 print(all_facets)
