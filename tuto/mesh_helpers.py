@@ -64,6 +64,12 @@ def buildNodes(surface_tag):
 
     return skfem_points, gmshNodeTagToSKFemIndex
 
+def reverseNodeDict(gmshToSK):
+    skToGmsh = dict()
+    for gmshTag, skIndex in gmshToSK.items():
+        skToGmsh[skIndex] = gmshTag
+    return skToGmsh
+
 def buildTriangleSet(surface_tag, gmshToSK):
     etypes, _, nodes = gmsh.model.mesh.get_elements(2, surface_tag)
     # We expect only triangles
