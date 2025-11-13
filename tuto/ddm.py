@@ -85,15 +85,17 @@ for idom in range(1, ndom+1):
     print(scipy_helpers.bmat(mats).shape)
 
     gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
+    
     if len(gamma_facets) == 0:
-        phys_b.append(np.zeros(mesh.nvertices, dtype=np.complex128))
+        local_source = np.zeros(mesh.nvertices, dtype=np.complex128)
     else:
         gamma_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=gamma_facets)
-        phys_b.append(skfem.asm(plane_wave.plane_wave, gamma_basis, k=k, theta=theta).astype(np.complex128))
+        local_source = skfem.asm(plane_wave.plane_wave, gamma_basis, k=k, theta=theta).astype(np.complex128)
 
     full_rhs = np.zeros(sum(sizes), dtype=np.complex128)
-    full_rhs[0:mesh.nvertices] = phys_b[-1]
+    full_rhs[0:mesh.nvertices] = local_source
     b_substructured = scipy.sparse.linalg.spsolve(scipy_helpers.bmat(mats), full_rhs)[mesh.nvertices:]
+    phys_b.append(b_substructured)
     print("b_substructured size: ", b_substructured.shape)
     print(b_substructured)
 
@@ -111,3 +113,7 @@ for idom in range(1, ndom+1):
 total_g_size = sum([sum([proj.shape[0] for (j, (fs, proj)) in gi.items()]) for gi in g])
 print("Total g size: ", total_g_size)
 print(offsets)
+
+rhs = np.concat(phys_b)
+print("Global rhs size: ", rhs.shape)
+print(rhs)
