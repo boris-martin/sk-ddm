@@ -14,16 +14,18 @@ import mesh_helpers
 import plane_wave
 import scipy_helpers
 
-ndom = 6
+ndom = 2
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
+local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
+local_solves = []
 phys_b = []
 theta = np.pi / 4
 
-wavelength = 0.4
+wavelength = 0.3
 k = 2 * np.pi / wavelength
 
-create_square(.1, ndom)
+create_square(.03, ndom)
 
 @BilinearForm
 def helmholtz(u, v, w):
@@ -39,7 +41,7 @@ def absorbing(u, v, w):
 @BilinearForm(facet=True, dtype=np.complex128)
 def transmission(u, v, w):
     k = w['k']
-    return np.complex128(-2j * k * u * conjugate(v))
+    return np.complex128(-(-0.1 + 1j) * k * u * conjugate(v))
 @LinearForm
 def source(v, w):
     return conjugate(v) * w['x'][0]
@@ -55,6 +57,7 @@ for idom in range(1, ndom+1):
 
     # Nodes have different SK-fem indices in each subdomain, mapping needed!
     skfem_points, gmshToSK = mesh_helpers.buildNodes(omega_tag)
+    SKToGmsh = mesh_helpers.reverseNodeDict(gmshToSK)
     skfem_elements = mesh_helpers.buildTriangleSet(omega_tag, gmshToSK)
     mesh = MeshTri(skfem_points, skfem_elements)
     facets_dict = mesh_helpers.buildFacetDict(mesh)
@@ -68,7 +71,8 @@ for idom in range(1, ndom+1):
             for node in mesh.facets[:, edge]:
                 nodeSet.update({node})
         function_space = skfem.FacetBasis(mesh, ElementTriP1(), facets=all_sigma_facets[j])
-        projector = scipy_helpers.restriction_matrix(mesh.nvertices, list(nodeSet))
+
+        projector = scipy_helpers.restriction_matrix(mesh.nvertices, list(nodeSet), SKToGmsh, gmshToSK)
         gi[j] = (function_space, projector)
 
     sizes = [mesh.nvertices] + [proj.shape[0] for (j, (fs, proj)) in gi.items()]
@@ -80,9 +84,10 @@ for idom in range(1, ndom+1):
     for idx_j, (j, (fs_j, pj)) in enumerate(gi.items()):
         mass = pj @ skfem.asm(mass_bnd, fs_j) @ pj.T
         mats[idx_j + 1][idx_j + 1] = mass
-        mat_s = pj @ skfem.asm(transmission, fs_j, k=k)# @ pj.T # Map from u to g
+        mat_s = -2 * pj @ skfem.asm(transmission, fs_j, k=k)# @ pj.T # Map from u to g
         mats[idx_j + 1][0] = mat_s
     print(scipy_helpers.bmat(mats).shape)
+    
 
     gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
     
@@ -94,21 +99,58 @@ for idom in range(1, ndom+1):
 
     full_rhs = np.zeros(sum(sizes), dtype=np.complex128)
     full_rhs[0:mesh.nvertices] = local_source
-    b_substructured = scipy.sparse.linalg.spsolve(scipy_helpers.bmat(mats), full_rhs)[mesh.nvertices:]
+    local_mats.append(scipy_helpers.bmat(mats))
+    schur_of_local = scipy_helpers.scipy_schur_complement(local_mats[-1], np.arange(0, mesh.nvertices, dtype=int))
+    b_substructured = scipy.sparse.linalg.spsolve(local_mats[-1], full_rhs)[mesh.nvertices:]
     phys_b.append(b_substructured)
-    print(b_substructured)
+    # Now, mats goes from the gs to the local solution including u
+    # So, structure is num_interface_fields to num_interface_fields + 1
+    mats = [[None for _ in range(num_interface_fields)] for _ in range(num_interface_fields + 1)]
+    for idx_j, j in enumerate(gi.keys()):
+        P = gi[j][1]
+        volumetric_mass_j = skfem.asm(mass_bnd, gi[j][0], k=k) @ P.T
+        print("Idx j", idx_j)
+        print("Vol mass shape", volumetric_mass_j.shape)
+        mats[0][idx_j] = volumetric_mass_j
+        print("P times vol mass shape", (P @ volumetric_mass_j).shape)
+        mats[idx_j + 1][idx_j] = -P @ volumetric_mass_j
+    local_rhs_mats.append(scipy_helpers.bmat(mats))
+
+    this_rhs_mat = local_rhs_mats[-1]
+    print("Shape of schur complement", schur_of_local.shape)
+    print("RHS generator shape", local_rhs_mats[-1].shape)
+
+    def local_solve(gloc):
+        assert(len(gloc) == sum([proj.shape[0] for (j, (fs, proj)) in gi.items()]))
+        rhs = local_rhs_mats[idom-1] @ gloc
+        assert(rhs.shape[0] == sum(sizes))
+        u_and_g = scipy.sparse.linalg.spsolve(local_mats[idom-1], rhs)
+        return u_and_g[mesh.nvertices:]
+
+    num_rows = sum(sizes) - mesh.nvertices
+    num_cols = sum([proj.shape[0] for (j, (fs, proj)) in gi.items()])
+    print("Shape: ", (num_rows, num_cols))
+    linearOp = scipy.sparse.linalg.LinearOperator((num_rows, num_cols), matvec=local_solve)
+    local_solves.append(linearOp)
+
+
+
+
 
 
 
 offsets = dict()
+istart = []
 counter = 0
 for idom in range(1, ndom+1):
+    istart.append(counter)
     gi = g[idom - 1]
     for j in sorted(gi):
         fs, proj = gi[j]
         offsets[(idom, j)] = counter
         counter += proj.shape[0]
-    
+istart.append(counter)    
+
 total_g_size = sum([sum([proj.shape[0] for (j, (fs, proj)) in gi.items()]) for gi in g])
 print("Total g size: ", total_g_size)
 print(offsets)
@@ -118,4 +160,41 @@ print("Global rhs size: ", rhs.shape)
 #print(rhs)
 
 swap  = scipy_helpers.build_swap(g, offsets, ndom, total_g_size)
-print(swap)
+
+def apply_local(g):
+    assert(g.shape[0] == total_g_size)
+    g_solved = np.zeros_like(g, dtype=np.complex128)
+    for idom in range(1, ndom+1):
+        working_range_start = istart[idom - 1]
+        working_range_end = istart[idom]
+        gloc = g[working_range_start:working_range_end]
+        gloc_solved = local_solves[idom - 1].matvec(gloc)
+        g_solved[working_range_start:working_range_end] = gloc_solved
+    return g_solved
+
+def ddm_operator(g):
+    g_swap = swap @ g
+    g_solved = apply_local(g_swap)
+    return g_solved
+
+ddm_linop = scipy.sparse.linalg.LinearOperator((total_g_size, total_g_size), matvec=ddm_operator)
+dense_ddm = ddm_linop @ np.eye(total_g_size)
+# SPY plot
+plt.figure()
+plt.spy(dense_ddm, markersize=1)
+plt.title("Sparsity pattern of DDM operator")
+plt.show()
+
+# Compute spectrum of ddm_operator
+eigs = scipy.sparse.linalg.eigs(ddm_linop, k=total_g_size-2, which='LM')
+# Plot eigenvalues
+plt.figure()
+plt.scatter(eigs[0].real, eigs[0].imag)
+plt.title("Eigenvalues of DDM operator")
+plt.xlabel("Real part")
+plt.ylabel("Imaginary part")
+# Plot unit circle for reference
+theta = np.linspace(0, 2*np.pi, 100)
+plt.plot(np.cos(theta), np.sin(theta), 'r--', label='Unit Circle')
+plt.grid()
+plt.show()
