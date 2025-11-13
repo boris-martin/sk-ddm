@@ -26,3 +26,6 @@ def restriction_matrix(n, idx):
     cols = idx                        # selects u[idx[i]]
 
     return sp.csr_matrix((data, (rows, cols)), shape=(m, n))
+
+def bmat(list_of_list):
+    return sp.bmat(list_of_list, format='csr')
