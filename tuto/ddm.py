@@ -96,7 +96,6 @@ for idom in range(1, ndom+1):
     full_rhs[0:mesh.nvertices] = local_source
     b_substructured = scipy.sparse.linalg.spsolve(scipy_helpers.bmat(mats), full_rhs)[mesh.nvertices:]
     phys_b.append(b_substructured)
-    print("b_substructured size: ", b_substructured.shape)
     print(b_substructured)
 
 
@@ -116,4 +115,7 @@ print(offsets)
 
 rhs = np.concat(phys_b)
 print("Global rhs size: ", rhs.shape)
-print(rhs)
+#print(rhs)
+
+swap  = scipy_helpers.build_swap(g, offsets, ndom, total_g_size)
+print(swap)
