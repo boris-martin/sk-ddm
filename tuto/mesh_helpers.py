@@ -27,7 +27,6 @@ def find_entities_on_domain(target_partition):
     sigma_tags = dict() # j to tag
 
     for dim, tag in  gmsh.model.get_entities(-1):
-        print(f"Dimension: {dim}, Tag: {tag}")
         pdim, ptag = gmsh.model.getParent(dim, tag)
         partitions = gmsh.model.getPartitions(dim, tag)
         if target_partition not in partitions:
