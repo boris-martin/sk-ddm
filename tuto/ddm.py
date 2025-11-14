@@ -14,12 +14,13 @@ import mesh_helpers
 import plane_wave
 import scipy_helpers
 
-ndom = 3
+ndom = 4
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
 local_physical_sources = []
 local_solves = []
+all_g_masses = []
 phys_b = []
 meshes = []
 theta = np.pi / 4
@@ -27,7 +28,7 @@ theta = np.pi / 4
 wavelength = 0.3
 k = 2 * np.pi / wavelength
 
-create_square(.03, ndom)
+create_square(.05, ndom)
 
 @BilinearForm
 def helmholtz(u, v, w):
@@ -132,6 +133,7 @@ for idom in range(1, ndom+1):
         fs_j, pj = gi[j]
         print("IDX J, J :", idx_j, j)
         mass = pj @ skfem.asm(mass_bnd, fs_j) @ pj.T
+        all_g_masses.append(mass)
         mats[idx_j + 1][idx_j + 1] = mass
         mat_s = -2 * pj @ skfem.asm(transmission, fs_j, k=k)# @ pj.T # Map from u to g
         mats[idx_j + 1][0] = mat_s
@@ -204,7 +206,8 @@ for idom in range(1, ndom+1):
     """
 
 
-
+full_mass = scipy.sparse.block_diag(all_g_masses)
+print("Full mass shape: ", full_mass.shape)
 
 
 
@@ -257,19 +260,20 @@ print("Norm of RHS: ", np.linalg.norm(rhs))
 print("Residual: ", np.linalg.norm(id_minus_ddm @ x_dense - rhs)/np.linalg.norm(rhs))
 
 # Build full solution
-x = swap @ x
-for idom in range(1, ndom+1):
-    working_range_start = istart[idom - 1]
-    working_range_end = istart[idom]
-    gloc = x[working_range_start:working_range_end]
-    artifical_source = local_rhs_mats[idom-1] @ gloc
-    physical_source = local_physical_sources[idom-1]
-    mesh = meshes[idom-1]
-    u_local = scipy.sparse.linalg.spsolve(local_mats[idom-1], artifical_source+physical_source)[0:mesh.nvertices]
-    print(f"Domain {idom} local solution norm: ", np.linalg.norm(u_local))
-    print("Shape and nvertices : ", u_local.shape, meshes[idom-1].nvertices)
-    plot(meshes[idom-1], np.real(u_local[:mesh.nvertices]), shading='gouraud')
-    plt.show()
+if False:
+    x = swap @ x
+    for idom in range(1, ndom+1):
+        working_range_start = istart[idom - 1]
+        working_range_end = istart[idom]
+        gloc = x[working_range_start:working_range_end]
+        artifical_source = local_rhs_mats[idom-1] @ gloc
+        physical_source = local_physical_sources[idom-1]
+        mesh = meshes[idom-1]
+        u_local = scipy.sparse.linalg.spsolve(local_mats[idom-1], artifical_source+physical_source)[0:mesh.nvertices]
+        print(f"Domain {idom} local solution norm: ", np.linalg.norm(u_local))
+        print("Shape and nvertices : ", u_local.shape, meshes[idom-1].nvertices)
+        plot(meshes[idom-1], np.real(u_local[:mesh.nvertices]), shading='gouraud')
+        plt.show()
 
 from scipy.sparse.linalg import svds
 
@@ -278,8 +282,28 @@ from scipy.sparse.linalg import svds
 
 from numpy.linalg import svd
 
-u, s, vt = svd(ddm_dense)
-print("Singular values: ", s)
+u, s, vt = svd(np.eye(total_g_size)- ddm_dense)
+print("Singular values: ", s[s < 1e-8])
+ker = vt.T[:, s < 1e-8]
+print("Approximate kernel dimension: ", ker.shape[1])
+for i in range(ker.shape[1]):
+    print("Kernel vector ", i, " norm: ", np.linalg.norm(ker[:, i]))
+    #Filter near-zero entries for display
+    vec = full_mass @ ker[:, i]
+    # Make it have unit L-inf norm
+    vec = vec / np.max(np.abs(vec))
+    vec[np.abs(vec) < 1e-3] = 0.0
+    # Filter both real and imag parts separately
+    vec[np.abs(np.real(vec)) < 1e-3] = np.imag(vec[np.abs(np.real(vec)) < 1e-3]) * 1j
+    vec[np.abs(np.imag(vec)) < 1e-3] = np.real(vec[np.abs(np.imag(vec)) < 1e-3])
+    # Print real part if imaginary part is small
+    norm_imag = np.linalg.norm(np.imag(vec))
+    norm_real = np.linalg.norm(np.real(vec))
+    if norm_imag < 1e-6:
+        vec = np.real(vec)
+    elif norm_real < 1e-6:
+        vec = 1j * np.imag(vec)
+    print(vec)
 
 
 
