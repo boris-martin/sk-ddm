@@ -13,6 +13,7 @@ from mesh_helpers import create_square, find_entities_on_domain
 import mesh_helpers
 import plane_wave
 import scipy_helpers
+from ddm_utils import helmholtz, absorbing, mass_bnd, transmission
 
 from collections import defaultdict
 
@@ -34,21 +35,6 @@ k = 2 * np.pi / wavelength
 
 create_square(.05, ndom)
 
-@BilinearForm
-def helmholtz(u, v, w):
-    k = w['k']
-    return dot(grad(u), conjugate(grad(v))) - k**2 * u * conjugate(v)
-@BilinearForm(facet=True, dtype=np.complex128)
-def mass_bnd(u, v, w):
-    return np.complex128(u * conjugate(v))
-@BilinearForm(facet=True, dtype=np.complex128)
-def absorbing(u, v, w):
-    k = w['k']
-    return np.complex128(-1j * k * u * conjugate(v))
-@BilinearForm(facet=True, dtype=np.complex128)
-def transmission(u, v, w):
-    k = w['k']
-    return np.complex128(-(-0.0 + 1j) * k * u * conjugate(v))
 
 # GPT fix
 def make_local_solve(gi, sizes, local_rhs_mat, local_mat, nvertices):
@@ -313,7 +299,7 @@ for i in range(ker.shape[1]):
 eigs = scipy.sparse.linalg.eigs(ddm_linop, k=total_g_size-2, which='LM')
 eigs_from_dense = np.linalg.eigvals(np.eye(total_g_size) - ddm_dense)
 # Plot eigenvalues
-if False:
+if True:
     plt.figure()
     plt.scatter(eigs_from_dense.real, eigs_from_dense.imag)
     plt.title("Eigenvalues of DDM operator")

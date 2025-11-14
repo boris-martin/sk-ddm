@@ -1,5 +1,8 @@
 # ddm_utils.py
 import numpy as np
+from skfem import MeshTri, FacetBasis, ElementTriP1, LinearForm, BilinearForm
+from skfem.helpers import grad, dot
+from numpy import conjugate
 
 def build_offsets_and_total_size(g, ndom: int):
     """
@@ -31,3 +34,20 @@ def build_full_rhs(phys_b_list):
     Concatenate per-subdomain physical RHS contributions into a single global RHS.
     """
     return np.concatenate(phys_b_list)
+
+
+@BilinearForm
+def helmholtz(u, v, w):
+    k = w['k']
+    return dot(grad(u), conjugate(grad(v))) - k**2 * u * conjugate(v)
+@BilinearForm(facet=True, dtype=np.complex128)
+def mass_bnd(u, v, w):
+    return np.complex128(u * conjugate(v))
+@BilinearForm(facet=True, dtype=np.complex128)
+def absorbing(u, v, w):
+    k = w['k']
+    return np.complex128(-1j * k * u * conjugate(v))
+@BilinearForm(facet=True, dtype=np.complex128)
+def transmission(u, v, w):
+    k = w['k']
+    return np.complex128(-(-0.0 + 1j) * k * u * conjugate(v))
