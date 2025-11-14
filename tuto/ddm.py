@@ -14,7 +14,7 @@ import mesh_helpers
 import plane_wave
 import scipy_helpers
 
-ndom = 8
+ndom = 16
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
@@ -22,10 +22,10 @@ local_solves = []
 phys_b = []
 theta = np.pi / 4
 
-wavelength = 0.3
+wavelength = 0.4
 k = 2 * np.pi / wavelength
 
-create_square(.03, ndom)
+create_square(.05, ndom)
 
 @BilinearForm
 def helmholtz(u, v, w):
@@ -222,23 +222,31 @@ def ddm_operator(g):
     return g_solved
 
 ddm_linop = scipy.sparse.linalg.LinearOperator((total_g_size, total_g_size), matvec=ddm_operator)
-dense_ddm = ddm_linop @ np.eye(total_g_size)
-# SPY plot
-plt.figure()
-plt.spy(dense_ddm, markersize=1)
-plt.title("Sparsity pattern of DDM operator")
-plt.show()
+ddm_dense = ddm_linop @ np.eye(total_g_size, dtype=np.complex128)
+from scipy.sparse.linalg import svds
+
+#u, s, vt = svds(ddm_linop, k=6, which='SM')
+#print("Singular vlaues: ", s)
+
+from numpy.linalg import svd
+
+u, s, vt = svd(ddm_dense)
+print("Singular values: ", s)
+
+
+
 
 # Compute spectrum of ddm_operator
 eigs = scipy.sparse.linalg.eigs(ddm_linop, k=total_g_size-2, which='LM')
+eigs_from_dense = np.linalg.eigvals(np.eye(total_g_size) - ddm_dense)
 # Plot eigenvalues
 plt.figure()
-plt.scatter(eigs[0].real, eigs[0].imag)
+plt.scatter(eigs_from_dense.real, eigs_from_dense.imag)
 plt.title("Eigenvalues of DDM operator")
 plt.xlabel("Real part")
 plt.ylabel("Imaginary part")
 # Plot unit circle for reference
 theta = np.linspace(0, 2*np.pi, 100)
-plt.plot(np.cos(theta), np.sin(theta), 'r--', label='Unit Circle')
+plt.plot(np.cos(theta)+1, np.sin(theta), 'r--', label='Unit Circle')
 plt.grid()
 plt.show()
