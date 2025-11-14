@@ -25,8 +25,25 @@ local_physical_sources = []
 local_solves = []
 all_g_masses = []
 phys_b = []
-meshes = []
 theta = np.pi / 4
+subdomains = []
+
+class Subdomain:
+    def __init__(self, idom, omega_tag: int, gamma_tags: list, sigma_tags: dict):
+        self.idom = idom
+        self.omega_tag = omega_tag
+        self.gamma_tags = gamma_tags
+        self.sigma_tags = sigma_tags
+
+        self.gi = dict()  # j -> (facetbasis space, projector matrix)
+        self.skfem_points, self.gmshToSK = mesh_helpers.buildNodes(omega_tag)
+        self.SKToGmsh = mesh_helpers.reverseNodeDict(self.gmshToSK)
+        self.elements = mesh_helpers.buildTriangleSet(omega_tag, self.gmshToSK)
+        self.mesh = MeshTri(self.skfem_points, self.elements)
+        self.facets_dict = mesh_helpers.buildFacetDict(self.mesh) # Pair of nodes to face ID
+        self.all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, self.gmshToSK, self.facets_dict)
+
+
 
 cross_points_gmsh_tags = set()
 
@@ -86,39 +103,29 @@ for idom in range(1, ndom+1):
     g.append(dict())
     gi = g[-1]
     print(f"Domain {idom}:")
-    #print(f"-- Omega tag: {omega_tag}")
-    #print(f"-- Gamma tags: {gamma_tags}")
-    #print(f"-- Sigma tags: {sigma_tags}")
 
-    # Nodes have different SK-fem indices in each subdomain, mapping needed!
-    skfem_points, gmshToSK = mesh_helpers.buildNodes(omega_tag)
-    SKToGmsh = mesh_helpers.reverseNodeDict(gmshToSK)
-    skfem_elements = mesh_helpers.buildTriangleSet(omega_tag, gmshToSK)
-    mesh = MeshTri(skfem_points, skfem_elements)
-    meshes.append(mesh)
-    facets_dict = mesh_helpers.buildFacetDict(mesh)
-    all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, gmshToSK, facets_dict)
-
+    subdomain = Subdomain(idom, omega_tag, gamma_tags, sigma_tags)
+    subdomains.append(subdomain)
+    mesh = subdomain.mesh
     nodesToJset = defaultdict(set)
-
 
     for j, sigma_tag in sigma_tags.items():
         nodeSet = set()
-        if j not in all_sigma_facets:
+        if j not in subdomain.all_sigma_facets:
             raise ValueError(f"Domain {idom}: Sigma tag {sigma_tag} not found in facets.")
-        for edge in all_sigma_facets[j]:
+        for edge in subdomain.all_sigma_facets[j]:
             for node in mesh.facets[:, edge]:
                 nodeSet.update({node})
-        function_space = skfem.FacetBasis(mesh, ElementTriP1(), facets=all_sigma_facets[j])
+        function_space = skfem.FacetBasis(mesh, ElementTriP1(), facets=subdomain.all_sigma_facets[j])
         for node in nodeSet:
-            nodesToJset[SKToGmsh[node]].add(j)
-        projector = scipy_helpers.restriction_matrix(mesh.nvertices, list(nodeSet), SKToGmsh, gmshToSK)
+            nodesToJset[subdomain.SKToGmsh[node]].add(j)
+        projector = scipy_helpers.restriction_matrix(mesh.nvertices, list(nodeSet), subdomain.SKToGmsh, subdomain.gmshToSK)
         gi[j] = (function_space, projector)
 
     sizes = [int(mesh.nvertices)] + [proj.shape[0] for (j, (fs, proj)) in gi.items()]
     print("Local sizes (u and each g): ", sizes)
     num_interface_fields = len(gi)
-    gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
+    gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, subdomain.gmshToSK, subdomain.facets_dict)
 
     mats = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
     mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k) + \
@@ -248,11 +255,11 @@ if False:
         gloc = x[working_range_start:working_range_end]
         artifical_source = local_rhs_mats[idom-1] @ gloc
         physical_source = local_physical_sources[idom-1]
-        mesh = meshes[idom-1]
+        mesh = subdomains[idom-1].mesh
         u_local = scipy.sparse.linalg.spsolve(local_mats[idom-1], artifical_source+physical_source)[0:mesh.nvertices]
         print(f"Domain {idom} local solution norm: ", np.linalg.norm(u_local))
-        print("Shape and nvertices : ", u_local.shape, meshes[idom-1].nvertices)
-        plot(meshes[idom-1], np.real(u_local[:mesh.nvertices]), shading='gouraud')
+        print("Shape and nvertices : ", u_local.shape, subdomains[idom-1].mesh.nvertices)
+        plot(subdomains[idom-1].mesh, np.real(u_local[:mesh.nvertices]), shading='gouraud')
         plt.show()
 
 from scipy.sparse.linalg import svds
