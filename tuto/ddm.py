@@ -14,18 +14,20 @@ import mesh_helpers
 import plane_wave
 import scipy_helpers
 
-ndom = 16
+ndom = 2
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
+local_physical_sources = []
 local_solves = []
 phys_b = []
+meshes = []
 theta = np.pi / 4
 
-wavelength = 0.4
+wavelength = 0.3
 k = 2 * np.pi / wavelength
 
-create_square(.05, ndom)
+create_square(.03, ndom)
 
 @BilinearForm
 def helmholtz(u, v, w):
@@ -41,10 +43,7 @@ def absorbing(u, v, w):
 @BilinearForm(facet=True, dtype=np.complex128)
 def transmission(u, v, w):
     k = w['k']
-    return np.complex128(-(-0.1 + 1j) * k * u * conjugate(v))
-@LinearForm
-def source(v, w):
-    return conjugate(v) * w['x'][0]
+    return np.complex128(-(-0.0 + 1j) * k * u * conjugate(v))
 
 # GPT fix
 def make_local_solve(gi, sizes, local_rhs_mat, local_mat, nvertices):
@@ -68,6 +67,28 @@ def make_local_solve(gi, sizes, local_rhs_mat, local_mat, nvertices):
     return local_solve
 
 
+if ndom == 1:
+    # Mono domain solve
+    omega_tag, gamma_tags, sigma_tags = find_entities_on_domain(1)
+    skfem_points, gmshToSK = mesh_helpers.buildNodes(omega_tag)
+    skfem_elements = mesh_helpers.buildTriangleSet(omega_tag, gmshToSK)
+    mesh = MeshTri(skfem_points, skfem_elements)
+    basis = skfem.Basis(mesh, ElementTriP1())
+    fbasis = skfem.FacetBasis(mesh, ElementTriP1())  # all exterior facets
+    A = skfem.asm(helmholtz, basis, k=k) + skfem.asm(absorbing, fbasis, k=k)
+    gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, mesh_helpers.buildFacetDict(mesh))
+    if len(gamma_facets) == 0:
+        local_source = np.zeros(mesh.nvertices, dtype=np.complex128)
+    else:
+        gamma_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=gamma_facets)
+        local_source = skfem.asm(plane_wave.plane_wave, gamma_basis, k=k, theta=theta).astype(np.complex128)
+    u = scipy.sparse.linalg.spsolve(A, local_source)
+    print("Mono domain solution norm: ", np.linalg.norm(u))
+    plot(mesh, np.real(u), shading='gouraud')
+    plt.show()
+    exit()
+
+
 
 for idom in range(1, ndom+1):
     omega_tag, gamma_tags, sigma_tags = find_entities_on_domain(idom)
@@ -83,6 +104,7 @@ for idom in range(1, ndom+1):
     SKToGmsh = mesh_helpers.reverseNodeDict(gmshToSK)
     skfem_elements = mesh_helpers.buildTriangleSet(omega_tag, gmshToSK)
     mesh = MeshTri(skfem_points, skfem_elements)
+    meshes.append(mesh)
     facets_dict = mesh_helpers.buildFacetDict(mesh)
     all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, gmshToSK, facets_dict)
 
@@ -101,6 +123,8 @@ for idom in range(1, ndom+1):
     sizes = [int(mesh.nvertices)] + [proj.shape[0] for (j, (fs, proj)) in gi.items()]
     print("Local sizes (u and each g): ", sizes)
     num_interface_fields = len(gi)
+    gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
+
     mats = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
     mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k) + \
                     skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1()), k=k) # Should be ALL bnd facets
@@ -110,7 +134,6 @@ for idom in range(1, ndom+1):
         mat_s = -2 * pj @ skfem.asm(transmission, fs_j, k=k)# @ pj.T # Map from u to g
         mats[idx_j + 1][0] = mat_s
 
-    gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
     
     if len(gamma_facets) == 0:
         local_source = np.zeros(mesh.nvertices, dtype=np.complex128)
@@ -120,6 +143,7 @@ for idom in range(1, ndom+1):
 
     full_rhs = np.zeros(sum(sizes), dtype=np.complex128)
     full_rhs[0:mesh.nvertices] = local_source
+    local_physical_sources.append(np.array(full_rhs))
     local_mats.append(scipy_helpers.bmat(mats))
     b_substructured = scipy.sparse.linalg.spsolve(local_mats[-1], full_rhs)[mesh.nvertices:]
     phys_b.append(b_substructured)
@@ -199,7 +223,7 @@ total_g_size = sum([sum([proj.shape[0] for (j, (fs, proj)) in gi.items()]) for g
 print("Total g size: ", total_g_size)
 print(offsets)
 
-rhs = np.concat(phys_b)
+rhs = np.concatenate(phys_b)
 print("Global rhs size: ", rhs.shape)
 #print(rhs)
 
@@ -222,7 +246,29 @@ def ddm_operator(g):
     return g_solved
 
 ddm_linop = scipy.sparse.linalg.LinearOperator((total_g_size, total_g_size), matvec=ddm_operator)
+id_minus_ddm = scipy.sparse.linalg.LinearOperator((total_g_size, total_g_size), matvec=lambda x: x - ddm_operator(x))
+x, info = scipy.sparse.linalg.gmres(id_minus_ddm, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual: ", r))
+print(x, info)
 ddm_dense = ddm_linop @ np.eye(total_g_size, dtype=np.complex128)
+x_dense = np.linalg.solve(np.eye(total_g_size) - ddm_dense, rhs)
+print("Norm of RHS: ", np.linalg.norm(rhs))
+print("Residual: ", np.linalg.norm(id_minus_ddm @ x_dense - rhs)/np.linalg.norm(rhs))
+
+# Build full solution
+x = swap @ x
+for idom in range(1, ndom+1):
+    working_range_start = istart[idom - 1]
+    working_range_end = istart[idom]
+    gloc = x[working_range_start:working_range_end]
+    artifical_source = local_rhs_mats[idom-1] @ gloc
+    physical_source = local_physical_sources[idom-1]
+    mesh = meshes[idom-1]
+    u_local = scipy.sparse.linalg.spsolve(local_mats[idom-1], artifical_source+physical_source)[0:mesh.nvertices]
+    print(f"Domain {idom} local solution norm: ", np.linalg.norm(u_local))
+    print("Shape and nvertices : ", u_local.shape, meshes[idom-1].nvertices)
+    plot(meshes[idom-1], np.real(u_local[:mesh.nvertices]), shading='gouraud')
+    plt.show()
+
 from scipy.sparse.linalg import svds
 
 #u, s, vt = svds(ddm_linop, k=6, which='SM')
