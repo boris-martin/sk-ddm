@@ -83,7 +83,7 @@ class LocalDDMSolver:
         self.swap = swap_op
         self.T = spla.LinearOperator(
             swap_op.shape,
-            matvec=lambda x: self.swap @ self.apply(x)
+            matvec=lambda x: self.apply(self.swap @(x))
         )
         # A = Id - T
         self.A = spla.LinearOperator(
