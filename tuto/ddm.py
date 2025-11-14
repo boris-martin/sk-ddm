@@ -128,7 +128,9 @@ for idom in range(1, ndom+1):
     mats = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
     mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k) + \
                     skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1()), k=k) # Should be ALL bnd facets
-    for idx_j, (j, (fs_j, pj)) in enumerate(gi.items()):
+    for idx_j, j in enumerate(sorted(gi.keys())):
+        fs_j, pj = gi[j]
+        print("IDX J, J :", idx_j, j)
         mass = pj @ skfem.asm(mass_bnd, fs_j) @ pj.T
         mats[idx_j + 1][idx_j + 1] = mass
         mat_s = -2 * pj @ skfem.asm(transmission, fs_j, k=k)# @ pj.T # Map from u to g
@@ -150,7 +152,7 @@ for idom in range(1, ndom+1):
     # Now, mats goes from the gs to the local solution including u
     # So, structure is num_interface_fields to num_interface_fields + 1
     mats = [[None for _ in range(num_interface_fields)] for _ in range(num_interface_fields + 1)]
-    for idx_j, j in enumerate(gi.keys()):
+    for idx_j, j in enumerate(sorted(gi.keys())):
         P = gi[j][1]
         volumetric_mass_j = skfem.asm(mass_bnd, gi[j][0], k=k) @ P.T
         print("Idx j", idx_j)
