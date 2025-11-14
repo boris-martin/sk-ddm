@@ -129,7 +129,11 @@ for idom in range(1, ndom+1):
 
     mats = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
     mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k) + \
-                    skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1()), k=k) # Should be ALL bnd facets
+                    skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1(), facets=gamma_facets), k=k) # Should be ALL bnd facets
+    for idx_j, j in enumerate(sorted(gi.keys())):
+        transmission_contribution = skfem.asm(transmission, gi[j][0], k=k)
+        mats[0][0] += transmission_contribution
+
     for idx_j, j in enumerate(sorted(gi.keys())):
         fs_j, pj = gi[j]
         print("IDX J, J :", idx_j, j)
