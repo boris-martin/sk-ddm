@@ -14,6 +14,8 @@ import mesh_helpers
 import plane_wave
 import scipy_helpers
 
+from collections import defaultdict
+
 ndom = 4
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
@@ -24,6 +26,8 @@ all_g_masses = []
 phys_b = []
 meshes = []
 theta = np.pi / 4
+
+cross_points_gmsh_tags = set()
 
 wavelength = 0.3
 k = 2 * np.pi / wavelength
@@ -109,6 +113,9 @@ for idom in range(1, ndom+1):
     facets_dict = mesh_helpers.buildFacetDict(mesh)
     all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, gmshToSK, facets_dict)
 
+    nodesToJset = defaultdict(set)
+
+
     for j, sigma_tag in sigma_tags.items():
         nodeSet = set()
         if j not in all_sigma_facets:
@@ -117,7 +124,8 @@ for idom in range(1, ndom+1):
             for node in mesh.facets[:, edge]:
                 nodeSet.update({node})
         function_space = skfem.FacetBasis(mesh, ElementTriP1(), facets=all_sigma_facets[j])
-
+        for node in nodeSet:
+            nodesToJset[SKToGmsh[node]].add(j)
         projector = scipy_helpers.restriction_matrix(mesh.nvertices, list(nodeSet), SKToGmsh, gmshToSK)
         gi[j] = (function_space, projector)
 
@@ -307,18 +315,41 @@ for i in range(ker.shape[1]):
 
 
 
-
 # Compute spectrum of ddm_operator
 eigs = scipy.sparse.linalg.eigs(ddm_linop, k=total_g_size-2, which='LM')
 eigs_from_dense = np.linalg.eigvals(np.eye(total_g_size) - ddm_dense)
 # Plot eigenvalues
-plt.figure()
-plt.scatter(eigs_from_dense.real, eigs_from_dense.imag)
-plt.title("Eigenvalues of DDM operator")
-plt.xlabel("Real part")
-plt.ylabel("Imaginary part")
-# Plot unit circle for reference
-theta = np.linspace(0, 2*np.pi, 100)
-plt.plot(np.cos(theta)+1, np.sin(theta), 'r--', label='Unit Circle')
-plt.grid()
-plt.show()
+if False:
+    plt.figure()
+    plt.scatter(eigs_from_dense.real, eigs_from_dense.imag)
+    plt.title("Eigenvalues of DDM operator")
+    plt.xlabel("Real part")
+    plt.ylabel("Imaginary part")
+    # Plot unit circle for reference
+    theta = np.linspace(0, 2*np.pi, 100)
+    plt.plot(np.cos(theta)+1, np.sin(theta), 'r--', label='Unit Circle')
+    plt.grid()
+    plt.show()
+
+
+
+for node, doms in nodesToJset.items():
+    if len(doms) >= 2:
+        cross_points_gmsh_tags.add(node)
+
+print("Cross points Gmsh tags: ", cross_points_gmsh_tags)
+
+
+gmsh_vertices = gmsh.model.get_entities(0)
+for dim, tag in gmsh_vertices:
+    parDim, parTag = gmsh.model.getParent(dim, tag)
+    if parDim != 2:
+        continue
+    partitions = gmsh.model.getPartitions(dim, tag)
+    print("Vertex tag ", tag, " partitions: ", partitions)
+    if len(partitions) >= 2:
+        print(f"Vertex tag {tag} is shared by partitions {partitions}")
+
+
+
+print("Ker shape: ", ker.shape)
