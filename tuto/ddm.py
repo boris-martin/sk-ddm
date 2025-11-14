@@ -220,21 +220,15 @@ print("Full mass shape: ", full_mass.shape)
 
 
 
-offsets = dict()
-istart = []
-counter = 0
-for idom in range(1, ndom+1):
-    istart.append(counter)
-    gi = g[idom - 1]
-    for j in sorted(gi):
-        fs, proj = gi[j]
-        offsets[(idom, j)] = counter
-        counter += proj.shape[0]
-istart.append(counter)    
+from ddm_utils import build_offsets_and_total_size, build_full_rhs
 
-total_g_size = sum([sum([proj.shape[0] for (j, (fs, proj)) in gi.items()]) for gi in g])
+offsets, istart, total_g_size = build_offsets_and_total_size(g, ndom)
 print("Total g size: ", total_g_size)
 print(offsets)
+
+rhs = build_full_rhs(phys_b)
+print("Global rhs size: ", rhs.shape)
+
 
 rhs = np.concatenate(phys_b)
 print("Global rhs size: ", rhs.shape)
