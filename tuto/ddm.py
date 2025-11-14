@@ -206,7 +206,7 @@ print("Full mass shape: ", full_mass.shape)
 
 
 
-from ddm_utils import build_offsets_and_total_size, build_full_rhs
+from ddm_utils import build_offsets_and_total_size, build_full_rhs, LocalDDMSolver
 
 offsets, istart, total_g_size = build_offsets_and_total_size(g, ndom)
 print("Total g size: ", total_g_size)
@@ -222,30 +222,22 @@ print("Global rhs size: ", rhs.shape)
 
 swap  = scipy_helpers.build_swap(g, offsets, ndom, total_g_size)
 
-def apply_local(g):
-    assert(g.shape[0] == total_g_size)
-    g_solved = np.zeros_like(g, dtype=np.complex128)
-    for idom in range(1, ndom+1):
-        working_range_start = istart[idom - 1]
-        working_range_end = istart[idom]
-        gloc = g[working_range_start:working_range_end]
-        gloc_solved = local_solves[idom - 1].matvec(gloc)
-        g_solved[working_range_start:working_range_end] = gloc_solved
-    return g_solved
+ddm_op = LocalDDMSolver(local_solves, istart, ndom, total_g_size)
+ddm_op.set_swap(swap)
+
+
 
 def ddm_operator(g):
     g_swap = swap @ g
-    g_solved = apply_local(g_swap)
+    g_solved = ddm_op.apply(g_swap)
     return g_solved
 
-ddm_linop = scipy.sparse.linalg.LinearOperator((total_g_size, total_g_size), matvec=ddm_operator)
-id_minus_ddm = scipy.sparse.linalg.LinearOperator((total_g_size, total_g_size), matvec=lambda x: x - ddm_operator(x))
-x, info = scipy.sparse.linalg.gmres(id_minus_ddm, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual: ", r))
+x, info = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual: ", r))
 print(x, info)
-ddm_dense = ddm_linop @ np.eye(total_g_size, dtype=np.complex128)
+ddm_dense = ddm_op.T @ np.eye(total_g_size, dtype=np.complex128)
 x_dense = np.linalg.solve(np.eye(total_g_size) - ddm_dense, rhs)
 print("Norm of RHS: ", np.linalg.norm(rhs))
-print("Residual: ", np.linalg.norm(id_minus_ddm @ x_dense - rhs)/np.linalg.norm(rhs))
+print("Residual: ", np.linalg.norm(ddm_op.A @ x_dense - rhs)/np.linalg.norm(rhs))
 
 # Build full solution
 if False:
@@ -265,7 +257,7 @@ if False:
 
 from scipy.sparse.linalg import svds
 
-#u, s, vt = svds(ddm_linop, k=6, which='SM')
+#u, s, vt = svds(ddm_op.T, k=6, which='SM')
 #print("Singular vlaues: ", s)
 
 from numpy.linalg import svd
@@ -296,7 +288,7 @@ for i in range(ker.shape[1]):
 
 
 # Compute spectrum of ddm_operator
-eigs = scipy.sparse.linalg.eigs(ddm_linop, k=total_g_size-2, which='LM')
+eigs = scipy.sparse.linalg.eigs(ddm_op.T, k=total_g_size-2, which='LM')
 eigs_from_dense = np.linalg.eigvals(np.eye(total_g_size) - ddm_dense)
 # Plot eigenvalues
 if True:
