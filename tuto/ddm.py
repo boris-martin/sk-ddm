@@ -14,7 +14,7 @@ import mesh_helpers
 import plane_wave
 import scipy_helpers
 
-ndom = 2
+ndom = 8
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
@@ -46,14 +46,37 @@ def transmission(u, v, w):
 def source(v, w):
     return conjugate(v) * w['x'][0]
 
+# GPT fix
+def make_local_solve(gi, sizes, local_rhs_mat, local_mat, nvertices):
+    # Precompute for asserts and speed
+    actual_length = sum(proj.shape[0] for (j, (_, proj)) in gi.items())
+    total_size = sum(sizes)
+
+    def local_solve(gloc):
+        # Basic sanity checks; useful while debugging
+        assert gloc.shape[0] == actual_length, (
+            f"Wrong length in local solve: expected {actual_length}, got {gloc.shape[0]}"
+        )
+        rhs = local_rhs_mat @ gloc
+        assert rhs.shape[0] == total_size, (
+            f"RHS size mismatch: expected {total_size}, got {rhs.shape[0]}"
+        )
+        u_and_g = scipy.sparse.linalg.spsolve(local_mat, rhs)
+        # Return only the interface part
+        return u_and_g[nvertices:]
+
+    return local_solve
+
+
+
 for idom in range(1, ndom+1):
     omega_tag, gamma_tags, sigma_tags = find_entities_on_domain(idom)
     g.append(dict())
     gi = g[-1]
     print(f"Domain {idom}:")
-    print(f"-- Omega tag: {omega_tag}")
-    print(f"-- Gamma tags: {gamma_tags}")
-    print(f"-- Sigma tags: {sigma_tags}")
+    #print(f"-- Omega tag: {omega_tag}")
+    #print(f"-- Gamma tags: {gamma_tags}")
+    #print(f"-- Sigma tags: {sigma_tags}")
 
     # Nodes have different SK-fem indices in each subdomain, mapping needed!
     skfem_points, gmshToSK = mesh_helpers.buildNodes(omega_tag)
@@ -75,8 +98,8 @@ for idom in range(1, ndom+1):
         projector = scipy_helpers.restriction_matrix(mesh.nvertices, list(nodeSet), SKToGmsh, gmshToSK)
         gi[j] = (function_space, projector)
 
-    sizes = [mesh.nvertices] + [proj.shape[0] for (j, (fs, proj)) in gi.items()]
-    print("Local sizes: ", sizes)
+    sizes = [int(mesh.nvertices)] + [proj.shape[0] for (j, (fs, proj)) in gi.items()]
+    print("Local sizes (u and each g): ", sizes)
     num_interface_fields = len(gi)
     mats = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
     mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k) + \
@@ -86,8 +109,6 @@ for idom in range(1, ndom+1):
         mats[idx_j + 1][idx_j + 1] = mass
         mat_s = -2 * pj @ skfem.asm(transmission, fs_j, k=k)# @ pj.T # Map from u to g
         mats[idx_j + 1][0] = mat_s
-    print(scipy_helpers.bmat(mats).shape)
-    
 
     gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
     
@@ -100,7 +121,6 @@ for idom in range(1, ndom+1):
     full_rhs = np.zeros(sum(sizes), dtype=np.complex128)
     full_rhs[0:mesh.nvertices] = local_source
     local_mats.append(scipy_helpers.bmat(mats))
-    schur_of_local = scipy_helpers.scipy_schur_complement(local_mats[-1], np.arange(0, mesh.nvertices, dtype=int))
     b_substructured = scipy.sparse.linalg.spsolve(local_mats[-1], full_rhs)[mesh.nvertices:]
     phys_b.append(b_substructured)
     # Now, mats goes from the gs to the local solution including u
@@ -117,11 +137,34 @@ for idom in range(1, ndom+1):
     local_rhs_mats.append(scipy_helpers.bmat(mats))
 
     this_rhs_mat = local_rhs_mats[-1]
-    print("Shape of schur complement", schur_of_local.shape)
     print("RHS generator shape", local_rhs_mats[-1].shape)
 
+    
+    local_rhs = local_rhs_mats[-1]
+    local_mat = local_mats[-1]
+    nvertices = mesh.nvertices
+
+    num_rows = sum(sizes) - nvertices
+    num_cols = sum(proj.shape[0] for (j, (_, proj)) in gi.items())
+
+    local_solve = make_local_solve(
+        gi=dict(gi),                  # shallow copy for safety
+        sizes=list(sizes),
+        local_rhs_mat=local_rhs,
+        local_mat=local_mat,
+        nvertices=nvertices,
+    )
+
+    linearOp = scipy.sparse.linalg.LinearOperator(
+        (num_rows, num_cols),
+        matvec=local_solve,
+        dtype=np.complex128,
+    )
+    local_solves.append(linearOp)
+    """
     def local_solve(gloc):
-        assert(len(gloc) == sum([proj.shape[0] for (j, (fs, proj)) in gi.items()]))
+        actual_length = sum([proj.shape[0] for (j, (fs, proj)) in gi.items()])
+        assert(len(gloc) == actual_length), "Wrong length in local solve: expected {}, got {}".format(actual_length, len(gloc))
         rhs = local_rhs_mats[idom-1] @ gloc
         assert(rhs.shape[0] == sum(sizes))
         u_and_g = scipy.sparse.linalg.spsolve(local_mats[idom-1], rhs)
@@ -132,6 +175,7 @@ for idom in range(1, ndom+1):
     print("Shape: ", (num_rows, num_cols))
     linearOp = scipy.sparse.linalg.LinearOperator((num_rows, num_cols), matvec=local_solve)
     local_solves.append(linearOp)
+    """
 
 
 

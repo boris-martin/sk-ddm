@@ -5,7 +5,6 @@ import scipy.sparse as sp
 def restriction_matrix(n, idx, SKToGmsh, gmshToSK):
     gmsh_nodes = sorted([SKToGmsh[i] for i in idx])
     sk_nodes = [gmshToSK[gmsh_node] for gmsh_node in gmsh_nodes]
-    print("Restriction matrix nodes (SK indices): ", gmsh_nodes)
 
     m = len(sk_nodes)
     # Column is a sk node index, row is a location in the gmsh nodes
