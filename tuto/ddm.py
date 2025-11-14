@@ -14,7 +14,7 @@ import mesh_helpers
 import plane_wave
 import scipy_helpers
 
-ndom = 2
+ndom = 3
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
