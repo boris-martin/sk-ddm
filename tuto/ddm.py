@@ -17,13 +17,14 @@ from ddm_utils import helmholtz, absorbing, mass_bnd, transmission
 
 from collections import defaultdict
 
-ndom = 4
+ndom = 3
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
 local_physical_sources = []
 local_solves = []
 all_g_masses = []
+all_s_masses = []
 phys_b = []
 theta = np.pi / 4
 subdomains = []
@@ -139,6 +140,8 @@ for idom in range(1, ndom+1):
         print("IDX J, J :", idx_j, j)
         mass = pj @ skfem.asm(mass_bnd, fs_j) @ pj.T
         all_g_masses.append(mass)
+        all_s_masses.append(pj @ skfem.asm(transmission, fs_j, k=k) @ pj.T * 1.0j)
+
         mats[idx_j + 1][idx_j + 1] = mass
         mat_s = -2 * pj @ skfem.asm(transmission, fs_j, k=k)# @ pj.T # Map from u to g
         mats[idx_j + 1][0] = mat_s
@@ -211,7 +214,8 @@ for idom in range(1, ndom+1):
     """
 
 
-full_mass = scipy.sparse.block_diag(all_g_masses)
+full_mass = scipy.sparse.block_diag(all_g_masses, format='csr')
+full_s_mass = scipy.sparse.block_diag(all_s_masses, format='csr')
 print("Full mass shape: ", full_mass.shape)
 
 
@@ -244,7 +248,7 @@ def ddm_operator(g):
     return g_solved
 
 x, info = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual: ", r))
-print(x, info)
+#print(x, info)
 ddm_dense = ddm_op.T @ np.eye(total_g_size, dtype=np.complex128)
 x_dense = np.linalg.solve(np.eye(total_g_size) - ddm_dense, rhs)
 print("Norm of RHS: ", np.linalg.norm(rhs))
@@ -294,7 +298,7 @@ for i in range(ker.shape[1]):
         vec = np.real(vec)
     elif norm_real < 1e-6:
         vec = 1j * np.imag(vec)
-    print(vec)
+    #print(vec)
 
 
 
@@ -302,7 +306,7 @@ for i in range(ker.shape[1]):
 eigs = scipy.sparse.linalg.eigs(ddm_op.T, k=total_g_size-2, which='LM')
 eigs_from_dense = np.linalg.eigvals(np.eye(total_g_size) - ddm_dense)
 # Plot eigenvalues
-if True:
+if False:
     plt.figure()
     plt.scatter(eigs_from_dense.real, eigs_from_dense.imag)
     plt.title("Eigenvalues of DDM operator")

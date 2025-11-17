@@ -102,8 +102,12 @@ def mass_bnd(u, v, w):
 @BilinearForm(facet=True, dtype=np.complex128)
 def absorbing(u, v, w):
     k = w['k']
+    
     return np.complex128(-1j * k * u * conjugate(v))
 @BilinearForm(facet=True, dtype=np.complex128)
 def transmission(u, v, w):
     k = w['k']
-    return np.complex128(-(-0.0 + 1j) * k * u * conjugate(v))
+    x = w['x']
+    # k eff = k * (1 + x²)
+    k_eff = k * (1.0 + x[0]**2 + x[1]**2)
+    return np.complex128(-(-0.0 + 1j) * k_eff * u * conjugate(v))
