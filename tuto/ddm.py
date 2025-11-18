@@ -19,7 +19,7 @@ from collections import defaultdict
 
 from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d, cycle_find_prev_and_next
 
-ndom = 4
+ndom = 30
 local_physical_sources = []
 local_solves = []
 all_g_masses = []
@@ -32,10 +32,10 @@ subdomains = []
 
 cross_points_gmsh_tags = set()
 
-wavelength = 0.2
+wavelength = 1/7
 k = 2 * np.pi / wavelength
 
-create_square(.02, ndom)
+create_square(.015, ndom)
 crosspoints_gmsh_node_tags = set()
 crosspoints_gmsh_to_graph = {}
 
@@ -147,24 +147,44 @@ for idom in range(1, ndom+1):
     mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k)
     if len(gamma_facets) > 0:
         mats[0][0] += skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1(), facets=gamma_facets), k=k)
-        
+
     subdomain.set_neuman_mat(scipy.sparse.csr_matrix(mats[0][0])) # Deep copy
     all_sigma = np.concatenate(list(subdomain.all_sigma_facets.values()))
     global_sigma_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=all_sigma)
-    subdomain.set_sigma_mass_mat(scipy.sparse.csr_matrix(skfem.asm(mass_bnd, global_sigma_basis, k=k)))
+    subdomain.set_sigma_mass_mat(skfem.asm(mass_bnd, global_sigma_basis, k=k))
+    
+    rank_of_sigma = np.linalg.svd(subdomain.get_sigma_mass_mat().toarray(), compute_uv=False)
+    print("Sigma rank: ", np.sum(rank_of_sigma > 1e-10), " out of ", rank_of_sigma.shape[0])
+
+    sigma_mass = subdomain.get_neuman_mat()
+    bnd_dofs = subdomain.get_bnd_dofs()
+    sigma_mass_restricted = sigma_mass[bnd_dofs, :][:, bnd_dofs]
+
 
     # Generalized EVP: small real parts of neuman * X = lambda * sigma_mass * X
     from scipy.sparse.linalg import eigs
-    nev = 6
+    nev = 4
     neuman_mat = subdomain.get_neuman_mat()
     sigma_mass_mat = subdomain.get_sigma_mass_mat()
-    eigvals, eigvecs = eigs(neuman_mat, M=sigma_mass_mat, k=nev, which='SR', sigma=0.0)
+    eigvals, eigvecs = eigs(neuman_mat, M=sigma_mass_mat, k=nev, which='SR', sigma=0.1)
+    A_s = skfem.asm(transmission, global_sigma_basis, k=k)
+
     print(f"Domain {idom} generalized EVP eigenvalues (neuman * X = lambda * sigma_mass * X):")
     for l in range(nev):
         print(f"  Eigenvalue {l}: {eigvals[l]}")
-        #plot(mesh, np.real(eigvecs[:, l][0:mesh.nvertices]), shading='gouraud')
-        #plt.show()
+        ev = eigvals[l]
+        x = eigvecs[:, l]
+        g_continuous = ev * x
+        # g = lambda x + M^-1 A_S x where A_s is the absorption mat
+        g_continuous[bnd_dofs] += scipy.sparse.linalg.spsolve(sigma_mass_restricted, (A_s @ x)[bnd_dofs])
+        subdomain.add_continuous_g_coarse(g_continuous[bnd_dofs])
 
+    # local coarse space
+    z = np.column_stack(subdomain.continuous_g_coarse)
+    print("Local coarse space shape: ", z.shape)
+    # rank
+    rank_of_z = np.linalg.matrix_rank(z)
+    print("Local coarse space rank: ", rank_of_z)
     
 
     for idx_j, j in enumerate(sorted(gi.keys())):
@@ -270,6 +290,32 @@ def ddm_operator(g):
     g_solved = ddm_op.apply(g_swap)
     return g_solved
 
+
+all_coarse_spaces = [subdomains[i].gen_global_coarse_space_contrib(total_g_size, istart[i]) for i in range(ndom)]
+print("All coarse spaces shapes: ", [cs.shape for cs in all_coarse_spaces])
+total_cs_size = sum(cs.shape[1] for cs in all_coarse_spaces if cs is not None)
+print("Total coarse space size: ", total_cs_size)
+Z = np.zeros((total_g_size, total_cs_size), dtype=np.complex128)
+for i, cs in enumerate(all_coarse_spaces):
+    if cs is not None:
+        start_col = sum(all_coarse_spaces[j].shape[1] for j in range(i) if all_coarse_spaces[j] is not None)
+        end_col = start_col + cs.shape[1]
+        start_row = istart[i]
+        end_row = istart[i+1]
+        Z[start_row:end_row, start_col:end_col] = cs
+
+
+#plt.spy(Z, markersize=1)
+print("Shape of Z: ", Z.shape, " rank of Z and AZ", np.linalg.matrix_rank(Z, tol=1e-8), np.linalg.matrix_rank(ddm_op.A @ Z, tol=1e-8))
+ZAZ = np.conjugate(Z.T) @ (ddm_op.A @ Z)
+rank_zaz = np.linalg.matrix_rank(ZAZ, tol=1e-8)
+print("Rank of Z^* A Z: ", rank_zaz, " out of ", ZAZ.shape[0])
+
+#plt.show()
+
+ddm_dense = ddm_op.A @ np.eye(total_g_size, dtype=np.complex128)
+
+"""
 x, info = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual: ", r))
 #print(x, info)
 ddm_dense = ddm_op.A @ np.eye(total_g_size, dtype=np.complex128)
@@ -292,7 +338,7 @@ if False:
         print("Shape and nvertices : ", u_local.shape, subdomains[idom-1].mesh.nvertices)
         plot(subdomains[idom-1].mesh, np.real(u_local[:mesh.nvertices]), shading='gouraud')
         plt.show()
-
+"""
 from scipy.sparse.linalg import svds
 
 #u, s, vt = svds(ddm_op.T, k=6, which='SM')
@@ -309,7 +355,7 @@ print("Shape of msinv delta: ", m_s_inv_delta.shape)
 print("Is it a kernel for the adjoint? A^*x has norm ", np.linalg.norm(np.conj(ddm_dense.T) @ m_s_inv_delta), " and x has norm ", np.linalg.norm(m_s_inv_delta))
 
 
-print("Dense Svd...")
+print("Dense Svd... size is ", ddm_dense.shape)
 u, s, vt = svd(ddm_op.A @ np.eye(total_g_size, dtype=np.complex128), full_matrices=False)
 print("Number of singular values near zero: ", np.sum(s < 1e-8))
 
@@ -319,30 +365,89 @@ norm_2 = np.linalg.norm(m_s_inv_delta, ord=2) ** 2
 # Orthogonalize rhs to m_s_inv_delta if that matrix is not orthogonal
 Q, R = np.linalg.qr(m_s_inv_delta)
 rhs = rhs - Q @ (np.conjugate(Q.T) @ rhs)
-x_rand, info_rand = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual (rand RHS): ", r))
+#x_rand, info_rand = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual (rand RHS): ", r))
 
 
-# Build deflated operator
-Q, R = np.linalg.qr(m_inv_delta)
-def deflated_ddm_operator(g):
-    g_swap = swap @ g
-    g_solved = ddm_op.apply(g_swap)
-    x = g - g_solved
-    projection = Q @ (np.conjugate(Q.T) @ g)
-    return x + projection
-deflated_ddm_op = scipy.sparse.linalg.LinearOperator(
+# Build deflated operator from Z, ZAZ
+def prec(g):
+    print("Applygin on g of shape ", g.shape)
+    print("Z has shape ", Z.shape)
+    print("ZAZ has shape ", ZAZ.shape)
+    zt = np.conjugate(Z.T) @ g
+    print("Ztg has shape ", zt.shape)
+    Qg = Z @ (np.linalg.solve(ZAZ, zt))
+    AQg = ddm_op.A @ Qg
+    return Qg - AQg + g
+
+def prec_mat(G: np.ndarray) -> np.ndarray:
+    # G is shape (N, m)
+    # compute Z^H G : (k, N) @ (N, m) = (k, m)
+    ZHG = np.conjugate(Z.T) @ G
+    X = np.linalg.solve(ZAZ, ZHG)  # solves multiple RHS
+    QG = Z @ X
+    return G + QG - ddm_op.A @ QG
+    
+precond = scipy.sparse.linalg.LinearOperator(
     (total_g_size, total_g_size),
-    matvec=deflated_ddm_operator
+    matvec=prec,
+    matmat=prec_mat,
 )
 
+precond_ide = precond @ np.eye(total_g_size, dtype=np.complex128)
 
-eigs_from_dense = np.linalg.eigvals(deflated_ddm_op @ np.eye(total_g_size, dtype=np.complex128))
+
+
+
+# Hermitian part of the preconditioned operator
+# compar GMRES and GMRES precond
+residual = []
+scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: residual.append(r), maxiter=1000)
+counter = 0
+residual_prec = []
+scipy.sparse.linalg.gmres(ddm_op.A@precond_ide, rhs, rtol=1e-6, callback=lambda r: residual_prec.append(r), maxiter=1000)
+plt.plot(residual, label='No precond')
+plt.plot(residual_prec, label='With deflation precond')
+plt.yscale('log')
+plt.xlabel('Iteration')
+plt.ylabel('GMRES residual')
+plt.legend()
+plt.title('GMRES convergence with and without deflation preconditioner')
+plt.grid()
+plt.show()
+
+
+eigs_precond = np.linalg.eigvals(ddm_dense @ precond_ide)
+eigs_from_dense = np.linalg.eigvals(ddm_dense @ np.eye(total_g_size, dtype=np.complex128))
+
+
+def fov_sample(B, nsamples=2000):
+    N = B.shape[0]
+    vals = []
+    for _ in range(nsamples):
+        x = np.random.randn(N) + 1j*np.random.randn(N)
+        x /= np.linalg.norm(x)
+        vals.append(np.conjugate(x.T) @ (B @ x))
+    return np.array(vals)
+
+B = ddm_dense @ precond_ide
+fov_vals = fov_sample(B, nsamples=2000)
+
+plt.figure()
+plt.scatter(fov_vals.real, fov_vals.imag, s=2, alpha=0.5, label="Approx FOV")
+plt.scatter(eigs_from_dense.real, eigs_from_dense.imag, s=8, label="Eigenvalues")
+plt.xlabel("Real")
+plt.ylabel("Imag")
+plt.legend()
+plt.grid(True)
+plt.title("Field of Values vs Spectrum")
+plt.show()
 
 
 # Plot eigenvalues
 if True:
     plt.figure()
-    plt.scatter(eigs_from_dense.real, eigs_from_dense.imag)
+    plt.scatter(eigs_precond.real, eigs_precond.imag, label='Deflated operator eigenvalues')
+    plt.scatter(eigs_from_dense.real, eigs_from_dense.imag, label='Original operator eigenvalues')
     plt.title("Eigenvalues of DDM operator")
     plt.xlabel("Real part")
     plt.ylabel("Imaginary part")

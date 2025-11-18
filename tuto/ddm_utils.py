@@ -100,7 +100,10 @@ class LocalDDMSolver:
 @BilinearForm
 def helmholtz(u, v, w):
     k = w['k']
-    return dot(grad(u), conjugate(grad(v))) - k**2 * u * conjugate(v)
+    x = w['x']
+    x_left = x[0] < 0.5
+    k_eff = k * (1.0 + np.sin(x[0]*4 * 3.1415)**2) * x_left + k * (1.0 + np.cos(x[0]*4 * 3.1415)**2) * (~x_left)
+    return dot(grad(u), conjugate(grad(v))) - k_eff**2 * u * conjugate(v)
 @BilinearForm(facet=True, dtype=np.complex128)
 def mass_bnd(u, v, w):
     return np.complex128(u * conjugate(v))
@@ -113,9 +116,12 @@ def absorbing(u, v, w):
 def transmission(u, v, w):
     k = w['k']
     x = w['x']
+    # Mask for knowing if x[0] < 0.5
+    x_left = x[0] < 0.5
+
+
     # k eff = k * (1 + x²)
-    k_eff = k * (1.0 + x[0]**2 + x[1]**2)
-    #k_eff = k
+    k_eff = k * (1.0 + np.sin(x[0]*4 * 3.1415)**2) * x_left + k * (1.0 + np.cos(x[0]*4 * 3.1415)**2) * (~x_left)
     return np.complex128(-(-0.0 + 1j) * k_eff * u * conjugate(v))
 
 
@@ -138,6 +144,14 @@ class Subdomain:
         self.gi = dict()
 
         self.mats = dict()
+        self.continuous_g_coarse = []
+
+    def get_g_size(self):
+        total_size = 0
+        for j in self.gi.keys():
+            _, proj, _ = self.gi[j]
+            total_size += proj.shape[0]
+        return total_size
 
     def add_kernel_mode(self, kernel_column: int, node_sk: int, jplus: int, jminus: int):
         self.ker.append({'kernel_column': kernel_column, 'node_sk': node_sk, 'jplus': jplus, 'jminus': jminus})
@@ -166,3 +180,35 @@ class Subdomain:
 
     def get_rhs_mat(self):
         return self.mats['rhs']
+    
+    def add_continuous_g_coarse(self, g_coarse):
+        self.continuous_g_coarse.append(g_coarse)
+
+    def get_bnd_dofs(self):
+        # Concat all the entires of sigma into one facet list
+        bnd_facets_sigma = np.concatenate(list(self.all_sigma_facets.values()))
+        basis = FacetBasis(self.mesh, ElementTriP1(), facets=bnd_facets_sigma)
+        return basis.get_dofs(bnd_facets_sigma).flatten()
+
+    def gen_global_coarse_space_contrib(self, global_size, offset):
+        cs_size = len(self.continuous_g_coarse)
+        volume_size = self.mats['neuman'].shape[0]
+        if cs_size == 0:
+            return None
+        
+        zis_volume = np.zeros((volume_size, cs_size), dtype=np.complex128)
+        bnd_dofs = self.get_bnd_dofs()
+        zis_volume[bnd_dofs, :] = np.column_stack(self.continuous_g_coarse)
+        zis_g = np.zeros((global_size, cs_size), dtype=np.complex128)
+        #print("zis_volume shape:", zis_volume.shape)
+        #print("zis_g shape:", zis_g.shape)
+        local_spaces = []
+        for jdom in sorted(self.gi.keys()):
+            #print("For j = ", jdom, ": proj has shape ", self.gi[jdom][1].shape)
+            _, proj, _ = self.gi[jdom]
+            local_z = proj @ zis_volume
+            local_spaces.append(local_z)
+        
+        result = np.vstack(local_spaces)
+        #print("Resulting coarse space shape:", result.shape)
+        return result
