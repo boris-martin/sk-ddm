@@ -109,6 +109,6 @@ def transmission(u, v, w):
     k = w['k']
     x = w['x']
     # k eff = k * (1 + x²)
-    #k_eff = k * (1.0 + x[0]**2 + x[1]**2)
-    k_eff = k
+    k_eff = k * (1.0 + x[0]**2 + x[1]**2)
+    #k_eff = k
     return np.complex128(-(-0.0 + 1j) * k_eff * u * conjugate(v))
