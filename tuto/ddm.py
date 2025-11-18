@@ -303,6 +303,37 @@ rhs = rhs - Q @ (np.conjugate(Q.T) @ rhs)
 x_rand, info_rand = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual (rand RHS): ", r))
 
 
+# Build deflated operator
+Q, R = np.linalg.qr(m_inv_delta)
+def deflated_ddm_operator(g):
+    g_swap = swap @ g
+    g_solved = ddm_op.apply(g_swap)
+    x = g - g_solved
+    projection = Q @ (np.conjugate(Q.T) @ g)
+    return x + projection
+deflated_ddm_op = scipy.sparse.linalg.LinearOperator(
+    (total_g_size, total_g_size),
+    matvec=deflated_ddm_operator
+)
+
+
+eigs_from_dense = np.linalg.eigvals(deflated_ddm_op @ np.eye(total_g_size, dtype=np.complex128))
+
+
+# Plot eigenvalues
+if True:
+    plt.figure()
+    plt.scatter(eigs_from_dense.real, eigs_from_dense.imag)
+    plt.title("Eigenvalues of DDM operator")
+    plt.xlabel("Real part")
+    plt.ylabel("Imaginary part")
+    # Plot unit circle for reference
+    theta = np.linspace(0, 2*np.pi, 100)
+    plt.plot(np.cos(theta)+1, np.sin(theta), 'r--', label='Unit Circle')
+    plt.grid()
+    plt.show()
+
+
 exit()
 
 u, s, vt = svd(ddm_op.A @ spla.spsolve(full_mass, np.eye(total_g_size, dtype=np.complex128)), full_matrices=False)
