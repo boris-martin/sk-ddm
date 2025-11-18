@@ -20,8 +20,6 @@ from collections import defaultdict
 from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d, cycle_find_prev_and_next
 
 ndom = 24
-local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
-local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
 local_physical_sources = []
 local_solves = []
 all_g_masses = []
@@ -175,8 +173,10 @@ for idom in range(1, ndom+1):
     full_rhs = np.zeros(sum(sizes), dtype=np.complex128)
     full_rhs[0:mesh.nvertices] = local_source
     local_physical_sources.append(np.array(full_rhs))
-    local_mats.append(scipy_helpers.bmat(mats))
-    b_substructured = scipy.sparse.linalg.spsolve(local_mats[-1], full_rhs)[mesh.nvertices:]
+
+    subdomain.set_problem_mat(scipy_helpers.bmat(mats))
+
+    b_substructured = scipy.sparse.linalg.spsolve(subdomain.get_problem_mat(), full_rhs)[mesh.nvertices:]
     phys_b.append(b_substructured)
     # Now, mats goes from the gs to the local solution including u
     # So, structure is num_interface_fields to num_interface_fields + 1
@@ -186,13 +186,12 @@ for idom in range(1, ndom+1):
         volumetric_mass_j = skfem.asm(mass_bnd, gi[j][0], k=k) @ P.T
         mats[0][idx_j] = volumetric_mass_j
         mats[idx_j + 1][idx_j] = -P @ volumetric_mass_j
-    local_rhs_mats.append(scipy_helpers.bmat(mats))
 
-    this_rhs_mat = local_rhs_mats[-1]
+    rhs_mat  = scipy_helpers.bmat(mats)
+    subdomain.set_rhs_mat(rhs_mat)
+
 
     
-    local_rhs = local_rhs_mats[-1]
-    local_mat = local_mats[-1]
     nvertices = mesh.nvertices
 
     num_rows = sum(sizes) - nvertices
@@ -201,8 +200,8 @@ for idom in range(1, ndom+1):
     local_solve = make_local_solve(
         gi=dict(gi),                  # shallow copy for safety
         sizes=list(sizes),
-        local_rhs_mat=local_rhs,
-        local_mat=local_mat,
+        local_rhs_mat=subdomain.get_rhs_mat(),
+        local_mat=subdomain.get_problem_mat(),
         nvertices=nvertices,
     )
 

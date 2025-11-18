@@ -137,5 +137,19 @@ class Subdomain:
         self.ker = []
         self.gi = dict()
 
+        self.mats = dict()
+
     def add_kernel_mode(self, kernel_column: int, node_sk: int, jplus: int, jminus: int):
         self.ker.append({'kernel_column': kernel_column, 'node_sk': node_sk, 'jplus': jplus, 'jminus': jminus})
+
+    def set_problem_mat(self, mat):
+        self.mats['problem'] = mat
+
+    def get_problem_mat(self):
+        return self.mats['problem']
+    
+    def set_rhs_mat(self, mat):
+        self.mats['rhs'] = mat
+
+    def get_rhs_mat(self):
+        return self.mats['rhs']
