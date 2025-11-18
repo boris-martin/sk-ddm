@@ -17,9 +17,9 @@ from ddm_utils import helmholtz, absorbing, mass_bnd, transmission
 
 from collections import defaultdict
 
-from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d
+from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d, cycle_find_prev_and_next
 
-ndom = 4
+ndom = 8
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
@@ -56,9 +56,10 @@ cross_points_gmsh_tags = set()
 wavelength = 0.5
 k = 2 * np.pi / wavelength
 
-create_square(.05, ndom)
+create_square(.1, ndom)
 crosspoints_gmsh_node_tags = set()
 crosspoints_gmsh_to_partitions_triplet = {}
+crosspoints_gmsh_to_graph = {}
 
 gmsh_vertices = gmsh.model.get_entities(0)
 for dim, tag in gmsh_vertices:
@@ -76,13 +77,13 @@ for dim, tag in gmsh_vertices:
         print(f"Vertex tag {tag} is shared by partitions {partitions}")
         crosspoints_gmsh_node_tags.add(nodes[0])
         crosspoints_gmsh_to_partitions_triplet.update({nodes[0]: partitions})
-        if len(partitions) > 3:
-            raise ValueError(f"Vertex tag {tag} is shared by more than 3 partitions: {partitions}")
+        crosspoints_gmsh_to_graph.update({nodes[0]: cycle})
 
 
 crosspoints_gmsh_to_kernel_column = {tag: idx for idx, tag in enumerate(crosspoints_gmsh_node_tags)}
 print("Crosspoints mapping to kernel columns: ", crosspoints_gmsh_to_kernel_column)
 print("Crosspoints triplet: ", crosspoints_gmsh_to_partitions_triplet)
+print("Crosspoint dict: ", crosspoints_gmsh_to_graph)
 
 
 # GPT fix
@@ -160,7 +161,8 @@ for idom in range(1, ndom+1):
         if node_gmsh in crosspoints_gmsh_node_tags:
             column = crosspoints_gmsh_to_kernel_column[node_gmsh]
             partitions = crosspoints_gmsh_to_partitions_triplet[node_gmsh]
-            prev, next = circular_neighbors_triplets(partitions, idom)
+            partitions = crosspoints_gmsh_to_graph[node_gmsh]
+            prev, next = cycle_find_prev_and_next(partitions, idom)
             crosspoint_tag = crosspoints_gmsh_to_kernel_column[node_gmsh]
             print(f"Found kernel mode {crosspoint_tag} on domain {idom} at node {node_gmsh} shared with partitions {partitions}. Prev is {prev}, next is {next}")
             print("Local node value is at skfem node ", node_sk)
@@ -169,11 +171,16 @@ for idom in range(1, ndom+1):
     sizes = [int(mesh.nvertices)] + [proj.shape[0] for (j, (fs, proj, _)) in gi.items()]
     print("Local sizes (u and each g): ", sizes)
     num_interface_fields = len(gi)
+
     gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, subdomain.gmshToSK, subdomain.facets_dict)
+    print("gamma_facets has size ", len(gamma_facets))
 
     mats = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
-    mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k) + \
-                    skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1(), facets=gamma_facets), k=k) # Should be ALL bnd facets
+    mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k) 
+    
+    if len(gamma_facets) > 0:
+        mats[0][0] += skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1(), facets=gamma_facets), k=k)
+
     for idx_j, j in enumerate(sorted(gi.keys())):
         transmission_contribution = skfem.asm(transmission, gi[j][0], k=k)
         mats[0][0] += transmission_contribution
@@ -330,6 +337,11 @@ m_inv_delta = scipy.sparse.linalg.spsolve(full_mass, delta_kernel)
 print("Is it a kernel ? Ax has norm ", np.linalg.norm(ddm_op.A @ m_inv_delta), " and x has norm ", np.linalg.norm(m_inv_delta))
 m_s_inv_delta = full_mass @ scipy.sparse.linalg.spsolve(full_s_mass, delta_kernel)
 print("Is it a kernel for the adjoint? A^*x has norm ", np.linalg.norm(np.conj(ddm_dense.T) @ m_s_inv_delta), " and x has norm ", np.linalg.norm(m_s_inv_delta))
+
+
+print("Dense Svd...")
+u, s, vt = svd(ddm_op.A @ np.eye(total_g_size, dtype=np.complex128), full_matrices=False)
+print("Number of singular values near zero: ", np.sum(s < 1e-8))
 
 print("Solving randomized RHS orthogonalized to ker A* of shape", m_s_inv_delta.shape)
 rhs = np.random.normal(size=(total_g_size,)) + 1j * np.random.normal(size=(total_g_size,))

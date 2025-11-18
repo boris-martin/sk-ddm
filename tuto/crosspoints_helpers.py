@@ -79,3 +79,11 @@ def build_cycle_2d(partition_vertex_tag: int):
 
     print("Final order:", order)
     return order
+
+
+def cycle_find_prev_and_next(order: list, partition: int):
+    idx = order.index(partition)
+    size = len(order)
+    prev_idx = (idx - 1) % size
+    next_idx = (idx + 1) % size
+    return order[prev_idx], order[next_idx]
