@@ -6,6 +6,9 @@ from numpy import conjugate
 import scipy.sparse.linalg as spla
 import scipy.sparse
 
+from mesh_helpers import create_square, find_entities_on_domain
+import mesh_helpers
+
 def build_offsets_and_total_size(g, ndom: int):
     """
     Build:
@@ -112,3 +115,24 @@ def transmission(u, v, w):
     k_eff = k * (1.0 + x[0]**2 + x[1]**2)
     #k_eff = k
     return np.complex128(-(-0.0 + 1j) * k_eff * u * conjugate(v))
+
+
+
+class Subdomain:
+    def __init__(self, idom, omega_tag: int, gamma_tags: list, sigma_tags: dict):
+        self.idom = idom
+        self.omega_tag = omega_tag
+        self.gamma_tags = gamma_tags
+        self.sigma_tags = sigma_tags
+
+        self.skfem_points, self.gmshToSK = mesh_helpers.buildNodes(omega_tag)
+        self.SKToGmsh = mesh_helpers.reverseNodeDict(self.gmshToSK)
+        self.elements = mesh_helpers.buildTriangleSet(omega_tag, self.gmshToSK)
+        self.mesh = MeshTri(self.skfem_points, self.elements)
+        self.facets_dict = mesh_helpers.buildFacetDict(self.mesh) # Pair of nodes to face ID
+        self.all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, self.gmshToSK, self.facets_dict)
+
+        self.ker = []
+
+    def add_kernel_mode(self, kernel_column: int, node_sk: int, jplus: int, jminus: int):
+        self.ker.append({'kernel_column': kernel_column, 'node_sk': node_sk, 'jplus': jplus, 'jminus': jminus})

@@ -13,13 +13,13 @@ from mesh_helpers import create_square, find_entities_on_domain
 import mesh_helpers
 import plane_wave
 import scipy_helpers
-from ddm_utils import helmholtz, absorbing, mass_bnd, transmission
+from ddm_utils import helmholtz, absorbing, mass_bnd, transmission, Subdomain
 
 from collections import defaultdict
 
 from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d, cycle_find_prev_and_next
 
-ndom = 8
+ndom = 24
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
@@ -31,32 +31,14 @@ phys_b = []
 theta = np.pi / 4
 subdomains = []
 
-class Subdomain:
-    def __init__(self, idom, omega_tag: int, gamma_tags: list, sigma_tags: dict):
-        self.idom = idom
-        self.omega_tag = omega_tag
-        self.gamma_tags = gamma_tags
-        self.sigma_tags = sigma_tags
-
-        self.skfem_points, self.gmshToSK = mesh_helpers.buildNodes(omega_tag)
-        self.SKToGmsh = mesh_helpers.reverseNodeDict(self.gmshToSK)
-        self.elements = mesh_helpers.buildTriangleSet(omega_tag, self.gmshToSK)
-        self.mesh = MeshTri(self.skfem_points, self.elements)
-        self.facets_dict = mesh_helpers.buildFacetDict(self.mesh) # Pair of nodes to face ID
-        self.all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, self.gmshToSK, self.facets_dict)
-
-        self.ker = []
-
-    def add_kernel_mode(self, kernel_column: int, node_sk: int, jplus: int, jminus: int):
-        self.ker.append({'kernel_column': kernel_column, 'node_sk': node_sk, 'jplus': jplus, 'jminus': jminus})
 
 
 cross_points_gmsh_tags = set()
 
-wavelength = 0.5
+wavelength = 0.3
 k = 2 * np.pi / wavelength
 
-create_square(.1, ndom)
+create_square(.03, ndom)
 crosspoints_gmsh_node_tags = set()
 crosspoints_gmsh_to_partitions_triplet = {}
 crosspoints_gmsh_to_graph = {}
