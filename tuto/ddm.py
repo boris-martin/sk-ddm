@@ -40,7 +40,6 @@ k = 2 * np.pi / wavelength
 
 create_square(.03, ndom)
 crosspoints_gmsh_node_tags = set()
-crosspoints_gmsh_to_partitions_triplet = {}
 crosspoints_gmsh_to_graph = {}
 
 gmsh_vertices = gmsh.model.get_entities(0)
@@ -58,13 +57,11 @@ for dim, tag in gmsh_vertices:
     if len(partitions) >= 2:
         print(f"Vertex tag {tag} is shared by partitions {partitions}")
         crosspoints_gmsh_node_tags.add(nodes[0])
-        crosspoints_gmsh_to_partitions_triplet.update({nodes[0]: partitions})
         crosspoints_gmsh_to_graph.update({nodes[0]: cycle})
 
 
 crosspoints_gmsh_to_kernel_column = {tag: idx for idx, tag in enumerate(crosspoints_gmsh_node_tags)}
 print("Crosspoints mapping to kernel columns: ", crosspoints_gmsh_to_kernel_column)
-print("Crosspoints triplet: ", crosspoints_gmsh_to_partitions_triplet)
 print("Crosspoint dict: ", crosspoints_gmsh_to_graph)
 
 
@@ -142,7 +139,6 @@ for idom in range(1, ndom+1):
     for node_sk, node_gmsh in subdomain.SKToGmsh.items():
         if node_gmsh in crosspoints_gmsh_node_tags:
             column = crosspoints_gmsh_to_kernel_column[node_gmsh]
-            partitions = crosspoints_gmsh_to_partitions_triplet[node_gmsh]
             partitions = crosspoints_gmsh_to_graph[node_gmsh]
             prev, next = cycle_find_prev_and_next(partitions, idom)
             crosspoint_tag = crosspoints_gmsh_to_kernel_column[node_gmsh]
