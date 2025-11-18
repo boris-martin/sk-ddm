@@ -224,27 +224,9 @@ for idom in range(1, ndom+1):
         dtype=np.complex128,
     )
     local_solves.append(linearOp)
-    """
-    def local_solve(gloc):
-        actual_length = sum([proj.shape[0] for (j, (fs, proj)) in gi.items()])
-        assert(len(gloc) == actual_length), "Wrong length in local solve: expected {}, got {}".format(actual_length, len(gloc))
-        rhs = local_rhs_mats[idom-1] @ gloc
-        assert(rhs.shape[0] == sum(sizes))
-        u_and_g = scipy.sparse.linalg.spsolve(local_mats[idom-1], rhs)
-        return u_and_g[mesh.nvertices:]
-
-    num_rows = sum(sizes) - mesh.nvertices
-    num_cols = sum([proj.shape[0] for (j, (fs, proj)) in gi.items()])
-    print("Shape: ", (num_rows, num_cols))
-    linearOp = scipy.sparse.linalg.LinearOperator((num_rows, num_cols), matvec=local_solve)
-    local_solves.append(linearOp)
-    """
-
 
 full_mass = scipy.sparse.block_diag(all_g_masses, format='csr')
 full_s_mass = scipy.sparse.block_diag(all_s_masses, format='csr')
-
-
 
 
 from ddm_utils import build_offsets_and_total_size, build_full_rhs, LocalDDMSolver
