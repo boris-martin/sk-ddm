@@ -52,17 +52,12 @@ for dim, tag in gmsh_vertices:
 
     cycle = build_cycle_2d(tag)
     assert len(nodes) == 1, "Vertex should have exactly one node"
-    print(nodes)
     print("Vertex tag ", tag, " partitions: ", partitions)
     if len(partitions) >= 2:
-        print(f"Vertex tag {tag} is shared by partitions {partitions}")
         crosspoints_gmsh_node_tags.add(nodes[0])
         crosspoints_gmsh_to_graph.update({nodes[0]: cycle})
 
-
 crosspoints_gmsh_to_kernel_column = {tag: idx for idx, tag in enumerate(crosspoints_gmsh_node_tags)}
-print("Crosspoints mapping to kernel columns: ", crosspoints_gmsh_to_kernel_column)
-print("Crosspoint dict: ", crosspoints_gmsh_to_graph)
 
 
 # GPT fix
