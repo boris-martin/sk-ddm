@@ -23,7 +23,7 @@ def build_offsets_and_total_size(g, ndom: int):
         istart.append(counter)
         gi = g[idom - 1]
         for j in sorted(gi):
-            _, proj = gi[j]
+            _, proj, _ = gi[j]
             offsets[(idom, j)] = counter
             counter += proj.shape[0]
     istart.append(counter)
@@ -109,5 +109,6 @@ def transmission(u, v, w):
     k = w['k']
     x = w['x']
     # k eff = k * (1 + x²)
-    k_eff = k * (1.0 + x[0]**2 + x[1]**2)
+    #k_eff = k * (1.0 + x[0]**2 + x[1]**2)
+    k_eff = k
     return np.complex128(-(-0.0 + 1j) * k_eff * u * conjugate(v))

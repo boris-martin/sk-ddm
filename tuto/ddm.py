@@ -17,6 +17,8 @@ from ddm_utils import helmholtz, absorbing, mass_bnd, transmission
 
 from collections import defaultdict
 
+from crosspoints_helpers import circular_neighbors_triplets
+
 ndom = 3
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
@@ -36,7 +38,6 @@ class Subdomain:
         self.gamma_tags = gamma_tags
         self.sigma_tags = sigma_tags
 
-        self.gi = dict()  # j -> (facetbasis space, projector matrix)
         self.skfem_points, self.gmshToSK = mesh_helpers.buildNodes(omega_tag)
         self.SKToGmsh = mesh_helpers.reverseNodeDict(self.gmshToSK)
         self.elements = mesh_helpers.buildTriangleSet(omega_tag, self.gmshToSK)
@@ -44,20 +45,48 @@ class Subdomain:
         self.facets_dict = mesh_helpers.buildFacetDict(self.mesh) # Pair of nodes to face ID
         self.all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, self.gmshToSK, self.facets_dict)
 
+        self.ker = []
+
+    def add_kernel_mode(self, kernel_column: int, node_sk: int, jplus: int, jminus: int):
+        self.ker.append({'kernel_column': kernel_column, 'node_sk': node_sk, 'jplus': jplus, 'jminus': jminus})
 
 
 cross_points_gmsh_tags = set()
 
-wavelength = 0.3
+wavelength = 0.5
 k = 2 * np.pi / wavelength
 
-create_square(.05, ndom)
+create_square(.1, ndom)
+crosspoints_gmsh_node_tags = set()
+crosspoints_gmsh_to_partitions_triplet = {}
+
+gmsh_vertices = gmsh.model.get_entities(0)
+for dim, tag in gmsh_vertices:
+    parDim, parTag = gmsh.model.getParent(dim, tag)
+    if parDim != 2:
+        continue
+    partitions = gmsh.model.getPartitions(dim, tag)
+    nodes = gmsh.model.mesh.getNodes(dim, tag)[0]
+    assert len(nodes) == 1, "Vertex should have exactly one node"
+    print(nodes)
+    print("Vertex tag ", tag, " partitions: ", partitions)
+    if len(partitions) >= 2:
+        print(f"Vertex tag {tag} is shared by partitions {partitions}")
+        crosspoints_gmsh_node_tags.add(nodes[0])
+        crosspoints_gmsh_to_partitions_triplet.update({nodes[0]: partitions})
+        if len(partitions) > 3:
+            raise ValueError(f"Vertex tag {tag} is shared by more than 3 partitions: {partitions}")
+
+
+crosspoints_gmsh_to_kernel_column = {tag: idx for idx, tag in enumerate(crosspoints_gmsh_node_tags)}
+print("Crosspoints mapping to kernel columns: ", crosspoints_gmsh_to_kernel_column)
+print("Crosspoints triplet: ", crosspoints_gmsh_to_partitions_triplet)
 
 
 # GPT fix
 def make_local_solve(gi, sizes, local_rhs_mat, local_mat, nvertices):
     # Precompute for asserts and speed
-    actual_length = sum(proj.shape[0] for (j, (_, proj)) in gi.items())
+    actual_length = sum(proj.shape[0] for (j, (_, proj, _)) in gi.items())
     total_size = sum(sizes)
 
     def local_solve(gloc):
@@ -107,6 +136,7 @@ for idom in range(1, ndom+1):
 
     subdomain = Subdomain(idom, omega_tag, gamma_tags, sigma_tags)
     subdomains.append(subdomain)
+    subdomain.gi = gi
     mesh = subdomain.mesh
     nodesToJset = defaultdict(set)
 
@@ -120,10 +150,21 @@ for idom in range(1, ndom+1):
         function_space = skfem.FacetBasis(mesh, ElementTriP1(), facets=subdomain.all_sigma_facets[j])
         for node in nodeSet:
             nodesToJset[subdomain.SKToGmsh[node]].add(j)
-        projector = scipy_helpers.restriction_matrix(mesh.nvertices, list(nodeSet), subdomain.SKToGmsh, subdomain.gmshToSK)
-        gi[j] = (function_space, projector)
+        projector, sk_to_g = scipy_helpers.restriction_matrix(mesh.nvertices, list(nodeSet), subdomain.SKToGmsh, subdomain.gmshToSK)
+        gi[j] = (function_space, projector, sk_to_g)
 
-    sizes = [int(mesh.nvertices)] + [proj.shape[0] for (j, (fs, proj)) in gi.items()]
+
+    for node_sk, node_gmsh in subdomain.SKToGmsh.items():
+        if node_gmsh in crosspoints_gmsh_node_tags:
+            column = crosspoints_gmsh_to_kernel_column[node_gmsh]
+            partitions = crosspoints_gmsh_to_partitions_triplet[node_gmsh]
+            prev, next = circular_neighbors_triplets(partitions, idom)
+            crosspoint_tag = crosspoints_gmsh_to_kernel_column[node_gmsh]
+            print(f"Found kernel mode {crosspoint_tag} on domain {idom} at node {node_gmsh} shared with partitions {partitions}. Prev is {prev}, next is {next}")
+            print("Local node value is at skfem node ", node_sk)
+            subdomain.add_kernel_mode(crosspoint_tag, node_sk, next, prev)
+
+    sizes = [int(mesh.nvertices)] + [proj.shape[0] for (j, (fs, proj, _)) in gi.items()]
     print("Local sizes (u and each g): ", sizes)
     num_interface_fields = len(gi)
     gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, subdomain.gmshToSK, subdomain.facets_dict)
@@ -136,8 +177,7 @@ for idom in range(1, ndom+1):
         mats[0][0] += transmission_contribution
 
     for idx_j, j in enumerate(sorted(gi.keys())):
-        fs_j, pj = gi[j]
-        print("IDX J, J :", idx_j, j)
+        fs_j, pj, _ = gi[j]
         mass = pj @ skfem.asm(mass_bnd, fs_j) @ pj.T
         all_g_masses.append(mass)
         all_s_masses.append(pj @ skfem.asm(transmission, fs_j, k=k) @ pj.T * 1.0j)
@@ -165,15 +205,11 @@ for idom in range(1, ndom+1):
     for idx_j, j in enumerate(sorted(gi.keys())):
         P = gi[j][1]
         volumetric_mass_j = skfem.asm(mass_bnd, gi[j][0], k=k) @ P.T
-        print("Idx j", idx_j)
-        print("Vol mass shape", volumetric_mass_j.shape)
         mats[0][idx_j] = volumetric_mass_j
-        print("P times vol mass shape", (P @ volumetric_mass_j).shape)
         mats[idx_j + 1][idx_j] = -P @ volumetric_mass_j
     local_rhs_mats.append(scipy_helpers.bmat(mats))
 
     this_rhs_mat = local_rhs_mats[-1]
-    print("RHS generator shape", local_rhs_mats[-1].shape)
 
     
     local_rhs = local_rhs_mats[-1]
@@ -181,7 +217,7 @@ for idom in range(1, ndom+1):
     nvertices = mesh.nvertices
 
     num_rows = sum(sizes) - nvertices
-    num_cols = sum(proj.shape[0] for (j, (_, proj)) in gi.items())
+    num_cols = sum(proj.shape[0] for (j, (_, proj, _)) in gi.items())
 
     local_solve = make_local_solve(
         gi=dict(gi),                  # shallow copy for safety
@@ -216,7 +252,6 @@ for idom in range(1, ndom+1):
 
 full_mass = scipy.sparse.block_diag(all_g_masses, format='csr')
 full_s_mass = scipy.sparse.block_diag(all_s_masses, format='csr')
-print("Full mass shape: ", full_mass.shape)
 
 
 
@@ -225,15 +260,25 @@ from ddm_utils import build_offsets_and_total_size, build_full_rhs, LocalDDMSolv
 
 offsets, istart, total_g_size = build_offsets_and_total_size(g, ndom)
 print("Total g size: ", total_g_size)
-print(offsets)
-
+delta_kernel = np.zeros((total_g_size, len(crosspoints_gmsh_node_tags)), dtype=np.complex128)
+for idom in range(1, ndom+1):
+    subdomain = subdomains[idom - 1]
+    for mode in subdomain.ker:
+        kernel_column = mode['kernel_column']
+        node_sk = mode['node_sk']
+        jplus = int(mode['jplus'])
+        jminus = mode['jminus']
+        offset_jplus = subdomain.gi[jplus][2][node_sk]
+        global_dof_index_plus =  offset_jplus + offsets[(idom, jplus)]
+        offset_jminus = subdomain.gi[jminus][2][node_sk]
+        global_dof_index_minus =  offset_jminus + offsets[(idom, jminus)]
+        
+        delta_kernel[global_dof_index_plus, kernel_column] = 1.0
+        delta_kernel[global_dof_index_minus, kernel_column] = -1.0
 rhs = build_full_rhs(phys_b)
-print("Global rhs size: ", rhs.shape)
 
 
 rhs = np.concatenate(phys_b)
-print("Global rhs size: ", rhs.shape)
-#print(rhs)
 
 swap  = scipy_helpers.build_swap(g, offsets, ndom, total_g_size)
 
@@ -249,7 +294,7 @@ def ddm_operator(g):
 
 x, info = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual: ", r))
 #print(x, info)
-ddm_dense = ddm_op.T @ np.eye(total_g_size, dtype=np.complex128)
+ddm_dense = ddm_op.A @ np.eye(total_g_size, dtype=np.complex128)
 x_dense = np.linalg.solve(np.eye(total_g_size) - ddm_dense, rhs)
 print("Norm of RHS: ", np.linalg.norm(rhs))
 print("Residual: ", np.linalg.norm(ddm_op.A @ x_dense - rhs)/np.linalg.norm(rhs))
@@ -276,11 +321,81 @@ from scipy.sparse.linalg import svds
 #print("Singular vlaues: ", s)
 
 from numpy.linalg import svd
+import scipy.sparse.linalg as spla
 
-u, s, vt = svd(np.eye(total_g_size)- ddm_dense)
+
+m_inv_delta = scipy.sparse.linalg.spsolve(full_mass, delta_kernel)
+print("Is it a kernel ? Ax has norm ", np.linalg.norm(ddm_op.A @ m_inv_delta), " and x has norm ", np.linalg.norm(m_inv_delta))
+m_s_inv_delta = full_mass @ scipy.sparse.linalg.spsolve(full_s_mass, delta_kernel)
+print("Is it a kernel for the adjoint? A^*x has norm ", np.linalg.norm(np.conj(ddm_dense.T) @ m_s_inv_delta), " and x has norm ", np.linalg.norm(m_s_inv_delta))
+
+print("Solving randomized RHS orthogonalized to ker A* of shape", m_s_inv_delta.shape)
+rhs = np.random.normal(size=(total_g_size,)) + 1j * np.random.normal(size=(total_g_size,))
+norm_2 = np.linalg.norm(m_s_inv_delta, ord=2) ** 2
+# Orthogonalize rhs to m_s_inv_delta if that matrix is not orthogonal
+rhs = rhs - (np.conjugate(m_s_inv_delta.T) @ rhs) / norm_2 * m_s_inv_delta
+x_rand, info_rand = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual (rand RHS): ", r))
+
+
+exit()
+
+u, s, vt = svd(ddm_op.A @ spla.spsolve(full_mass, np.eye(total_g_size, dtype=np.complex128)), full_matrices=False)
+#u, s, vt = svd(ddm_op.A @ np.eye(total_g_size, dtype=np.complex128), full_matrices=False)
 print("Singular values: ", s[s < 1e-8])
-ker = vt.T[:, s < 1e-8]
-print("Approximate kernel dimension: ", ker.shape[1])
+ker = np.conjugate(vt.T[:, s < 1e-8])
+ker_of_adj = u[:, s < 1e-8]
+concatenated_kers = np.concatenate((ker, ker_of_adj), axis=1)
+
+# Is RHS of the problem orthogonal to the kernel of the operator?
+rhs_dot_ker = np.conjugate(ker.T) @ rhs
+print("RHS dot kernel vectors: ", abs(rhs_dot_ker))
+# Is it M-orthogonal ?
+rhs_dot_ker_M = np.conjugate(ker.T @ full_mass) @ (rhs)
+# Compute contributions of the dot per subdomain, before the summation
+for l in range(ker.shape[1]):
+    ker_vec = ker[:, l]
+    piecewise_product = np.conjugate(ker_vec) * (full_s_mass @ rhs)
+    for idom in range(1, ndom+1):
+        start = istart[idom - 1]
+        end = istart[idom]
+        contribution = np.sum(piecewise_product[start:end])
+        #print(f"Contribution to RHS M-orthogonality from domain {idom}, kernel vector {l}: ", contribution)
+
+print("RHS M-orthogonal to kernel vectors: ", abs(rhs_dot_ker_M))
+rhs_dot_ker_M = np.conjugate(ker.T) @ (full_s_mass @ rhs)
+print("RHS real(S)-orthogonal to kernel vectors: ", abs(rhs_dot_ker_M))
+
+sim = scipy.sparse.linalg.spsolve(full_s_mass, full_mass @ rhs)
+sinv_mass_dot_ker = np.conjugate(ker.T) @ sim
+print("RHS S^-1 M-orthogonal to kernel vectors: ", abs(sinv_mass_dot_ker))
+mis = scipy.sparse.linalg.spsolve(full_mass, full_s_mass @ rhs)
+massinv_dot_ker = np.conjugate(ker.T) @ mis
+print("RHS M^-1 S-orthogonal to kernel vectors: ", abs(massinv_dot_ker))
+mism = scipy.sparse.linalg.spsolve(full_mass, full_s_mass @ scipy.sparse.linalg.spsolve(full_mass, full_mass @ rhs))
+this_dot = np.conjugate(ker.T) @ mism
+print("RHS M^-1 S M-orthogonal to kernel vectors: ", abs(this_dot))
+# Is it M^-1-orthogonal ?
+rhs_dot_ker_Minv = np.conjugate(ker.T) @ scipy.sparse.linalg.spsolve(full_mass, rhs)
+print("RHS M^-1-orthogonal to kernel vectors: ", abs(rhs_dot_ker_Minv))
+
+print("Solving randomized RHS")
+rhs = np.random.normal(size=(total_g_size,)) + 1j * np.random.normal(size=(total_g_size,))
+x_rand, info_rand = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual (rand RHS): ", r))
+print("M-orthogonalizing the RHS against the kernel")
+y = scipy.sparse.linalg.spsolve(np.conjugate(ker.T) @ full_mass @ ker, np.conjugate(ker.T) @ (full_mass @ rhs))
+rhs = rhs - ker @ y
+print("Checking orthogonality after M-orthogonalization: ", np.conjugate(ker.T @ full_mass) @ rhs)
+x_rand_ortho, info_rand_ortho = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual (rand ortho RHS): ", r))
+
+#raise NotImplementedError("Think again about stuff with adjoint kernel?")
+
+_, ss, _ = svd(concatenated_kers)
+print("Singular values of concatenated ker and ker of adj: ", ss)
+number_of_nonzeros_in_concatenated = np.sum(ss > 1e-8)
+print("Cumulated rank is : ", number_of_nonzeros_in_concatenated)
+
+
+print("Approximate kernel dimension: ", ker.shape, ker_of_adj.shape)
 for i in range(ker.shape[1]):
     print("Kernel vector ", i, " norm: ", np.linalg.norm(ker[:, i]))
     #Filter near-zero entries for display
@@ -327,15 +442,7 @@ for node, doms in nodesToJset.items():
 print("Cross points Gmsh tags: ", cross_points_gmsh_tags)
 
 
-gmsh_vertices = gmsh.model.get_entities(0)
-for dim, tag in gmsh_vertices:
-    parDim, parTag = gmsh.model.getParent(dim, tag)
-    if parDim != 2:
-        continue
-    partitions = gmsh.model.getPartitions(dim, tag)
-    print("Vertex tag ", tag, " partitions: ", partitions)
-    if len(partitions) >= 2:
-        print(f"Vertex tag {tag} is shared by partitions {partitions}")
+
 
 
 

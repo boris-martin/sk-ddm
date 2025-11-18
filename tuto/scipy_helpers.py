@@ -6,6 +6,8 @@ def restriction_matrix(n, idx, SKToGmsh, gmshToSK):
     gmsh_nodes = sorted([SKToGmsh[i] for i in idx])
     sk_nodes = [gmshToSK[gmsh_node] for gmsh_node in gmsh_nodes]
 
+    sk_to_g_idx = dict()
+
     m = len(sk_nodes)
     # Column is a sk node index, row is a location in the gmsh nodes
     rows = [i for i in range(m)]
@@ -13,9 +15,10 @@ def restriction_matrix(n, idx, SKToGmsh, gmshToSK):
     data = [1.0 for _ in range(m)]
     for i in range(m):
         cols.append(sk_nodes[i])
+        sk_to_g_idx[sk_nodes[i]] = i
 
-    print("Shape of restrict", m, n)
-    return sp.csr_matrix((data, (rows, cols)), shape=(m, n))
+    #print("Shape of restrict", m, n)
+    return sp.csr_matrix((data, (rows, cols)), shape=(m, n)), sk_to_g_idx
 
 def bmat(list_of_list):
     return sp.bmat(list_of_list, format='csr')
