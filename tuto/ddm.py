@@ -17,7 +17,7 @@ from ddm_utils import helmholtz, absorbing, mass_bnd, transmission
 
 from collections import defaultdict
 
-from crosspoints_helpers import circular_neighbors_triplets
+from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d
 
 ndom = 4
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
@@ -67,6 +67,8 @@ for dim, tag in gmsh_vertices:
         continue
     partitions = gmsh.model.getPartitions(dim, tag)
     nodes = gmsh.model.mesh.getNodes(dim, tag)[0]
+
+    cycle = build_cycle_2d(tag)
     assert len(nodes) == 1, "Vertex should have exactly one node"
     print(nodes)
     print("Vertex tag ", tag, " partitions: ", partitions)
