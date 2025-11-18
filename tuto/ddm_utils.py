@@ -9,7 +9,7 @@ import scipy.sparse
 from mesh_helpers import create_square, find_entities_on_domain
 import mesh_helpers
 
-def build_offsets_and_total_size(g, ndom: int):
+def build_offsets_and_total_size(subdomains: list):
     """
     Build:
       - offsets[(idom, j)] : starting index of interface (idom, j) in global g
@@ -19,6 +19,8 @@ def build_offsets_and_total_size(g, ndom: int):
     Assumes each g[idom-1] is a dict j -> (fs, proj),
     and uses sorted(j) to define a consistent ordering.
     """
+    g = [subdomain.gi for subdomain in subdomains]
+    ndom = len(subdomains)
     offsets = {}
     istart = []
     counter = 0
@@ -133,6 +135,7 @@ class Subdomain:
         self.all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, self.gmshToSK, self.facets_dict)
 
         self.ker = []
+        self.gi = dict()
 
     def add_kernel_mode(self, kernel_column: int, node_sk: int, jplus: int, jminus: int):
         self.ker.append({'kernel_column': kernel_column, 'node_sk': node_sk, 'jplus': jplus, 'jminus': jminus})

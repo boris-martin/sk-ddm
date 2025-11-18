@@ -107,13 +107,11 @@ if ndom == 1:
 
 for idom in range(1, ndom+1):
     omega_tag, gamma_tags, sigma_tags = find_entities_on_domain(idom)
-    g.append(dict())
-    gi = g[-1]
     print(f"Domain {idom}:")
 
     subdomain = Subdomain(idom, omega_tag, gamma_tags, sigma_tags)
     subdomains.append(subdomain)
-    subdomain.gi = gi
+    gi = subdomain.gi
     mesh = subdomain.mesh
     nodesToJset = defaultdict(set)
 
@@ -222,7 +220,7 @@ full_s_mass = scipy.sparse.block_diag(all_s_masses, format='csr')
 
 from ddm_utils import build_offsets_and_total_size, build_full_rhs, LocalDDMSolver
 
-offsets, istart, total_g_size = build_offsets_and_total_size(g, ndom)
+offsets, istart, total_g_size = build_offsets_and_total_size(subdomains)
 print("Total g size: ", total_g_size)
 delta_kernel = np.zeros((total_g_size, len(crosspoints_gmsh_node_tags)), dtype=np.complex128)
 for idom in range(1, ndom+1):
@@ -244,7 +242,7 @@ rhs = build_full_rhs(phys_b)
 
 rhs = np.concatenate(phys_b)
 
-swap  = scipy_helpers.build_swap(g, offsets, ndom, total_g_size)
+swap  = scipy_helpers.build_swap(subdomains, offsets, ndom, total_g_size)
 
 ddm_op = LocalDDMSolver(local_solves, istart, ndom, total_g_size)
 ddm_op.set_swap(swap)

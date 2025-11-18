@@ -24,7 +24,8 @@ def bmat(list_of_list):
     return sp.bmat(list_of_list, format='csr')
 
 
-def build_swap(g, g_ij_offsets, ndom, total_g_size):
+def build_swap(subdomains, g_ij_offsets, ndom, total_g_size):
+    g = [subdomain.gi for subdomain in subdomains]
     total_size = total_g_size
     row_indices = []
     col_indices = []
