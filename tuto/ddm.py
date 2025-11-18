@@ -20,7 +20,6 @@ from collections import defaultdict
 from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d, cycle_find_prev_and_next
 
 ndom = 24
-g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
 local_physical_sources = []
