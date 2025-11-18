@@ -19,7 +19,7 @@ from collections import defaultdict
 
 from crosspoints_helpers import circular_neighbors_triplets
 
-ndom = 3
+ndom = 4
 g = [] # List (i-dom) of (j, (g_ij, vertexSet)} with g_ij a function space and the set of DOFs)
 local_mats = [] # List (i-dom) of local matrices (u + output g as in gmshDDM)
 local_rhs_mats = [] # List (i-dom) of map from local gijs to RHS of the local problem
@@ -56,7 +56,7 @@ cross_points_gmsh_tags = set()
 wavelength = 0.5
 k = 2 * np.pi / wavelength
 
-create_square(.1, ndom)
+create_square(.05, ndom)
 crosspoints_gmsh_node_tags = set()
 crosspoints_gmsh_to_partitions_triplet = {}
 
@@ -333,7 +333,8 @@ print("Solving randomized RHS orthogonalized to ker A* of shape", m_s_inv_delta.
 rhs = np.random.normal(size=(total_g_size,)) + 1j * np.random.normal(size=(total_g_size,))
 norm_2 = np.linalg.norm(m_s_inv_delta, ord=2) ** 2
 # Orthogonalize rhs to m_s_inv_delta if that matrix is not orthogonal
-rhs = rhs - (np.conjugate(m_s_inv_delta.T) @ rhs) / norm_2 * m_s_inv_delta
+Q, R = np.linalg.qr(m_s_inv_delta)
+rhs = rhs - Q @ (np.conjugate(Q.T) @ rhs)
 x_rand, info_rand = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual (rand RHS): ", r))
 
 
