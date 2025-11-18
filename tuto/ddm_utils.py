@@ -142,6 +142,19 @@ class Subdomain:
     def add_kernel_mode(self, kernel_column: int, node_sk: int, jplus: int, jminus: int):
         self.ker.append({'kernel_column': kernel_column, 'node_sk': node_sk, 'jplus': jplus, 'jminus': jminus})
 
+    def set_neuman_mat(self, mat):
+        self.mats['neuman'] = mat
+
+    def get_neuman_mat(self):
+        return self.mats['neuman']
+
+    # Global mass for DtN
+    def set_sigma_mass_mat(self, mat):
+        self.mats['sigma_mass'] = mat
+    def get_sigma_mass_mat(self):
+        return self.mats['sigma_mass']
+
+    
     def set_problem_mat(self, mat):
         self.mats['problem'] = mat
 

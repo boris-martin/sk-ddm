@@ -19,7 +19,7 @@ from collections import defaultdict
 
 from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d, cycle_find_prev_and_next
 
-ndom = 24
+ndom = 4
 local_physical_sources = []
 local_solves = []
 all_g_masses = []
@@ -32,10 +32,10 @@ subdomains = []
 
 cross_points_gmsh_tags = set()
 
-wavelength = 0.3
+wavelength = 0.2
 k = 2 * np.pi / wavelength
 
-create_square(.03, ndom)
+create_square(.02, ndom)
 crosspoints_gmsh_node_tags = set()
 crosspoints_gmsh_to_graph = {}
 
@@ -144,10 +144,28 @@ for idom in range(1, ndom+1):
     print("gamma_facets has size ", len(gamma_facets))
 
     mats = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
-    mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k) 
-    
+    mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k)
     if len(gamma_facets) > 0:
         mats[0][0] += skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1(), facets=gamma_facets), k=k)
+        
+    subdomain.set_neuman_mat(scipy.sparse.csr_matrix(mats[0][0])) # Deep copy
+    all_sigma = np.concatenate(list(subdomain.all_sigma_facets.values()))
+    global_sigma_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=all_sigma)
+    subdomain.set_sigma_mass_mat(scipy.sparse.csr_matrix(skfem.asm(mass_bnd, global_sigma_basis, k=k)))
+
+    # Generalized EVP: small real parts of neuman * X = lambda * sigma_mass * X
+    from scipy.sparse.linalg import eigs
+    nev = 6
+    neuman_mat = subdomain.get_neuman_mat()
+    sigma_mass_mat = subdomain.get_sigma_mass_mat()
+    eigvals, eigvecs = eigs(neuman_mat, M=sigma_mass_mat, k=nev, which='SR', sigma=0.0)
+    print(f"Domain {idom} generalized EVP eigenvalues (neuman * X = lambda * sigma_mass * X):")
+    for l in range(nev):
+        print(f"  Eigenvalue {l}: {eigvals[l]}")
+        #plot(mesh, np.real(eigvecs[:, l][0:mesh.nvertices]), shading='gouraud')
+        #plt.show()
+
+    
 
     for idx_j, j in enumerate(sorted(gi.keys())):
         transmission_contribution = skfem.asm(transmission, gi[j][0], k=k)
@@ -284,9 +302,10 @@ from numpy.linalg import svd
 import scipy.sparse.linalg as spla
 
 
-m_inv_delta = scipy.sparse.linalg.spsolve(full_mass, delta_kernel)
+m_inv_delta = scipy.sparse.linalg.spsolve(full_mass, delta_kernel.reshape(total_g_size, -1)).reshape(total_g_size, -1)
 print("Is it a kernel ? Ax has norm ", np.linalg.norm(ddm_op.A @ m_inv_delta), " and x has norm ", np.linalg.norm(m_inv_delta))
-m_s_inv_delta = full_mass @ scipy.sparse.linalg.spsolve(full_s_mass, delta_kernel)
+m_s_inv_delta = full_mass @ scipy.sparse.linalg.spsolve(full_s_mass, delta_kernel.reshape(total_g_size, -1)).reshape(total_g_size, -1)
+print("Shape of msinv delta: ", m_s_inv_delta.shape)
 print("Is it a kernel for the adjoint? A^*x has norm ", np.linalg.norm(np.conj(ddm_dense.T) @ m_s_inv_delta), " and x has norm ", np.linalg.norm(m_s_inv_delta))
 
 
