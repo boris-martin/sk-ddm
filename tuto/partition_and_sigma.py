@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
+import gmsh
+import matplotlib.pyplot as plt
 import numpy as np
 import skfem
-from skfem import MeshTri, FacetBasis, ElementTriP1, LinearForm, BilinearForm
-from skfem.helpers import grad, dot
+from skfem import BilinearForm, ElementTriP1, FacetBasis, LinearForm, MeshTri
+from skfem.helpers import dot, grad
 from skfem.visuals.matplotlib import plot
-import matplotlib.pyplot as plt
-import gmsh
 
-
-from mesh_helpers import create_square, find_entities_on_domain
 import mesh_helpers
 import plane_wave
+from mesh_helpers import create_square, find_entities_on_domain
 
 create_square(.01, 17)
 
@@ -74,6 +73,7 @@ A_vol += A_bnd
 #plt.show()
 
 import scipy.sparse.linalg
+
 b = np.zeros(mesh.nvertices, dtype=np.complex128)
 b[center_idx] = 1.0 + 0.0j
 theta = 0.0

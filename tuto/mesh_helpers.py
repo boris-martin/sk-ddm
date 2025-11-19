@@ -1,6 +1,7 @@
 import gmsh
 import numpy as np
 
+
 def create_square(lc = 0.02, ndom = 2, name="square"):
     if not gmsh.isInitialized():
         gmsh.initialize()

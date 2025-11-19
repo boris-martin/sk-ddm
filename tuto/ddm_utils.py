@@ -1,16 +1,17 @@
 # ddm_utils.py
-import numpy as np
-from skfem import MeshTri, FacetBasis, ElementTriP1, LinearForm, BilinearForm
-from skfem.helpers import grad, dot
-from numpy import conjugate
-import scipy.sparse.linalg as spla
-import scipy.sparse
-from scipy.sparse import csr_matrix
-
 from typing import Any
 
-from mesh_helpers import create_square, find_entities_on_domain
+import numpy as np
+import scipy.sparse
+import scipy.sparse.linalg as spla
+from numpy import conjugate
+from scipy.sparse import csr_matrix
+from skfem import BilinearForm, ElementTriP1, FacetBasis, LinearForm, MeshTri
+from skfem.helpers import dot, grad
+
 import mesh_helpers
+from mesh_helpers import create_square, find_entities_on_domain
+
 
 def build_offsets_and_total_size(subdomains: list):
     """

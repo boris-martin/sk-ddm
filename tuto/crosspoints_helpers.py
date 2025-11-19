@@ -1,6 +1,8 @@
-import numpy as np
-import gmsh
 from collections import defaultdict
+
+import gmsh
+import numpy as np
+
 
 def circular_neighbors_triplets(values: np.ndarray, x: int):
     """

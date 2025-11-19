@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
+import gmsh
+import matplotlib.pyplot as plt
 import numpy as np
 import skfem
-from skfem import MeshTri, FacetBasis, ElementTriP1, LinearForm, BilinearForm
+from skfem import BilinearForm, ElementTriP1, FacetBasis, LinearForm, MeshTri
 from skfem.visuals.matplotlib import plot
-import matplotlib.pyplot as plt
-import gmsh
-
-
 
 gmsh.initialize()
 gmsh.model.add("unit-square")
@@ -99,7 +97,7 @@ for domain in partitionTags:
     print(M)
     b = skfem.asm(source, basis)
     # Solve M x = b
-    from scipy.sparse.linalg import spsolve, lsqr
+    from scipy.sparse.linalg import lsqr, spsolve
     x = lsqr(M.tocsr(), b)[0]
     # Plot solution
     plot(basis, x, shading='gouraud', colorbar=True)

@@ -1,6 +1,7 @@
+import numpy as np
 from skfem import LinearForm
 from skfem.helpers import dot
-import numpy as np
+
 
 @LinearForm(facet=True, dtype=np.complex128)
 def plane_wave(v, w):

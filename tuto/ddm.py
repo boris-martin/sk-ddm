@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
-import numpy as np
-from numpy import conjugate
-import skfem
-from skfem import MeshTri, FacetBasis, ElementTriP1, LinearForm, BilinearForm
-from skfem.helpers import grad, dot
-from skfem.visuals.matplotlib import plot
-import matplotlib.pyplot as plt
-import gmsh
-import scipy.sparse.linalg
-import scipy.sparse
-from scipy.sparse import csr_matrix
+from collections import defaultdict
+from typing import Callable, Dict, List, Tuple
 
-from mesh_helpers import create_square, find_entities_on_domain
+import gmsh
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.sparse
+import scipy.sparse.linalg
+import skfem
+from numpy import conjugate
+from scipy.sparse import csr_matrix
+from skfem import BilinearForm, ElementTriP1, FacetBasis, LinearForm, MeshTri
+from skfem.helpers import dot, grad
+from skfem.visuals.matplotlib import plot
+
 import mesh_helpers
 import plane_wave
 import scipy_helpers
-from ddm_utils import helmholtz, absorbing, mass_bnd, transmission, Subdomain
-
-from collections import defaultdict
-from typing import Dict, Tuple, Callable, List
-from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d, cycle_find_prev_and_next
+from crosspoints_helpers import (build_cycle_2d, circular_neighbors_triplets,
+                                 cycle_find_prev_and_next)
+from ddm_utils import Subdomain, absorbing, helmholtz, mass_bnd, transmission
+from mesh_helpers import create_square, find_entities_on_domain
 
 ndom = 20
 local_physical_sources = []
@@ -270,7 +271,8 @@ full_mass = scipy.sparse.block_diag(all_g_masses, format='csr')
 full_s_mass = scipy.sparse.block_diag(all_s_masses, format='csr')
 
 
-from ddm_utils import build_offsets_and_total_size, build_full_rhs, LocalDDMSolver
+from ddm_utils import (LocalDDMSolver, build_full_rhs,
+                       build_offsets_and_total_size)
 
 offsets, istart, total_g_size = build_offsets_and_total_size(subdomains)
 print("Total g size: ", total_g_size)
@@ -355,13 +357,13 @@ if False:
         plot(subdomains[idom-1].mesh, np.real(u_local[:mesh.nvertices]), shading='gouraud')
         plt.show()
 """
+import scipy.sparse.linalg as spla
+from numpy.linalg import svd
 from scipy.sparse.linalg import svds
 
 #u, s, vt = svds(ddm_op.T, k=6, which='SM')
 #print("Singular vlaues: ", s)
 
-from numpy.linalg import svd
-import scipy.sparse.linalg as spla
 
 
 m_inv_delta = scipy.sparse.linalg.spsolve(full_mass, delta_kernel.reshape(total_g_size, -1)).reshape(total_g_size, -1)
