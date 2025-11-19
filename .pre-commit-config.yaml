@@ -3,5 +3,6 @@ repos:
     rev: v0.4.6
     hooks:
       - id: ruff
-        args: [ "--fix" ]
+        args: [ "--fix", "tuto" ]
       - id: ruff-format
+        args: [ "tuto" ]
