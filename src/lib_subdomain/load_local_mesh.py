@@ -84,6 +84,13 @@ class LocalGeometry:
         assert self.volume_basis is not None, "volume basis not built"
         return self.volume_basis.N
 
+    def init_all(self):
+        self.discover_entities()
+        self.build_skfem_mesh()
+        self.find_facets()
+        self.build_bases(order=1)
+
+
     def _find_sigma(self):
         facets: dict[int, set[int]] = {}
 
