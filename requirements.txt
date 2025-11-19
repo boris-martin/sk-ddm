@@ -1,4 +1,3 @@
 gmsh==4.15.0
 scikit_fem==11.0.0
-types-scipy
-types-matplotlib
+scipy-stubs==1.16.0
