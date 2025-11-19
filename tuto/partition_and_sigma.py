@@ -3,25 +3,31 @@ import matplotlib.pyplot as plt
 import mesh_helpers
 import numpy as np
 import plane_wave
+import scipy.sparse.linalg
 import skfem
 from mesh_helpers import create_square, find_entities_on_domain
 from skfem import BilinearForm, ElementTriP1, LinearForm, MeshTri
 from skfem.helpers import dot, grad
 from skfem.visuals.matplotlib import plot
 
-create_square(.01, 17)
+create_square(0.01, 17)
+
 
 @BilinearForm
 def helmholtz(u, v, w):
-    k = w['k']
+    k = w["k"]
     return dot(grad(u), grad(v)) - k**2 * u * v
+
+
 @BilinearForm(facet=True, dtype=np.complex128)
 def absorbing(u, v, w):
-    k = w['k']
+    k = w["k"]
     return np.complex128(-1j * k * u * v)
+
+
 @LinearForm
 def source(v, w):
-    return v * w['x'][0]
+    return v * w["x"][0]
 
 
 target_part = 4
@@ -44,10 +50,6 @@ mesh = MeshTri(skfem_points, skfem_elements)
 facets_dict = mesh_helpers.buildFacetDict(mesh)
 
 
-
-
-
-
 gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, facets_dict)
 sigma_facets = mesh_helpers.findFullSigma(sigma_tags, gmshToSK, facets_dict)
 # Concat gamma and sigma
@@ -65,11 +67,10 @@ print(A_bnd)
 A_vol += A_bnd
 
 
-#plot(mesh, np.arange(mesh.nelements), colorbar=True)
-#plt.title("Element indices")
-#plt.show()
+# plot(mesh, np.arange(mesh.nelements), colorbar=True)
+# plt.title("Element indices")
+# plt.show()
 
-import scipy.sparse.linalg
 
 b = np.zeros(mesh.nvertices, dtype=np.complex128)
 b[center_idx] = 1.0 + 0.0j
@@ -79,6 +80,6 @@ x = scipy.sparse.linalg.spsolve(A_vol, b)
 expected_x = plane_wave.plane_wave_value(skfem_points, k, theta)
 error = np.linalg.norm(x - expected_x) / np.linalg.norm(expected_x)
 print("Relative error compared to analytical solution:", error * 100, "%")
-plot(mesh, np.real(x), shading='gouraud', colorbar=True)
+plot(mesh, np.real(x), shading="gouraud", colorbar=True)
 plt.title("Solution")
 plt.show()

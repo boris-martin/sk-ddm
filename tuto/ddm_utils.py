@@ -61,21 +61,21 @@ class LocalDDMSolver:
 
     def __init__(self, local_solves, istart, ndom, total_g_size):
         self.local_solves = local_solves
-        self.ranges = [(istart[i-1], istart[i]) for i in range(1, ndom+1)]
+        self.ranges = [(istart[i - 1], istart[i]) for i in range(1, ndom + 1)]
         self.total_g_size = total_g_size
         self.swap = None
 
         # Defensive runtime check
         for (s, e), op in zip(self.ranges, self.local_solves):
-            assert op.shape[0] == (e - s), (
-                f"Local operator shape {op.shape[0]} does not match block size {e-s}"
-            )
+            assert op.shape[0] == (
+                e - s
+            ), f"Local operator shape {op.shape[0]} does not match block size {e-s}"
 
     def apply(self, g: np.ndarray) -> np.ndarray:
         """Apply and return local block-solve results on each domain."""
-        assert g.shape[0] == self.total_g_size, (
-            f"Expected g of size {self.total_g_size}, got {g.shape[0]}"
-        )
+        assert (
+            g.shape[0] == self.total_g_size
+        ), f"Expected g of size {self.total_g_size}, got {g.shape[0]}"
 
         g_solved = np.zeros_like(g, dtype=np.complex128)
 
@@ -83,48 +83,50 @@ class LocalDDMSolver:
             g_solved[s:e] = op.matvec(g[s:e])
 
         return g_solved
-    
+
     def set_swap(self, swap_op: csr_matrix):
         """Set a swap operator to be applied after local solves."""
         self.swap = swap_op
-        self.T = spla.LinearOperator(
-            swap_op.shape,
-            matvec=lambda x: self.apply(self.swap @(x))
-        )
+        self.T = spla.LinearOperator(swap_op.shape, matvec=lambda x: self.apply(self.swap @ (x)))
         # A = Id - T
-        self.A = spla.LinearOperator(
-            swap_op.shape,
-            matvec=lambda x: x - self.T.matvec(x)
-        )
+        self.A = spla.LinearOperator(swap_op.shape, matvec=lambda x: x - self.T.matvec(x))
 
 
 @BilinearForm
 def helmholtz(u, v, w):
-    k = w['k']
-    x = w['x']
+    k = w["k"]
+    x = w["x"]
     x_left = x[0] < 0.5
-    k_eff = k * (1.0 + np.sin(x[0]*4 * 3.1415)**2) * x_left + k * (1.0 + np.cos(x[0]*4 * 3.1415)**2) * (~x_left)
+    k_eff = k * (1.0 + np.sin(x[0] * 4 * 3.1415) ** 2) * x_left + k * (
+        1.0 + np.cos(x[0] * 4 * 3.1415) ** 2
+    ) * (~x_left)
     return dot(grad(u), conjugate(grad(v))) - k_eff**2 * u * conjugate(v)
+
+
 @BilinearForm(facet=True, dtype=np.complex128)
 def mass_bnd(u, v, w):
     return np.complex128(u * conjugate(v))
+
+
 @BilinearForm(facet=True, dtype=np.complex128)
 def absorbing(u, v, w):
-    k = w['k']
-    
+    k = w["k"]
+
     return np.complex128(-1j * k * u * conjugate(v))
+
+
 @BilinearForm(facet=True, dtype=np.complex128)
 def transmission(u, v, w):
-    k = w['k']
-    x = w['x']
+    k = w["k"]
+    x = w["x"]
     # Mask for knowing if x[0] < 0.5
     x_left = x[0] < 0.5
 
-
     # k eff = k * (1 + x²)
-    k_eff = k * (1.0 + np.sin(x[0]*4 * 3.1415)**2) * x_left + k * (1.0 + np.cos(x[0]*4 * 3.1415)**2) * (~x_left)
+    k_eff = k * (1.0 + np.sin(x[0] * 4 * 3.1415) ** 2) * x_left + k * (
+        1.0 + np.cos(x[0] * 4 * 3.1415) ** 2
+    ) * (~x_left)
     return np.complex128(-(-0.0 + 1j) * k_eff * u * conjugate(v))
-
 
 
 class Subdomain:
@@ -138,8 +140,10 @@ class Subdomain:
         self.SKToGmsh = mesh_helpers.reverseNodeDict(self.gmshToSK)
         self.elements = mesh_helpers.buildTriangleSet(omega_tag, self.gmshToSK)
         self.mesh = MeshTri(self.skfem_points, self.elements)
-        self.facets_dict = mesh_helpers.buildFacetDict(self.mesh) # Pair of nodes to face ID
-        self.all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, self.gmshToSK, self.facets_dict)
+        self.facets_dict = mesh_helpers.buildFacetDict(self.mesh)  # Pair of nodes to face ID
+        self.all_sigma_facets = mesh_helpers.findFullSigma(
+            sigma_tags, self.gmshToSK, self.facets_dict
+        )
 
         self.ker: list[dict[str, Any]] = []
         self.gi: dict[int, tuple] = dict()
@@ -155,33 +159,35 @@ class Subdomain:
         return total_size
 
     def add_kernel_mode(self, kernel_column: int, node_sk: int, jplus: int, jminus: int):
-        self.ker.append({'kernel_column': kernel_column, 'node_sk': node_sk, 'jplus': jplus, 'jminus': jminus})
+        self.ker.append(
+            {"kernel_column": kernel_column, "node_sk": node_sk, "jplus": jplus, "jminus": jminus}
+        )
 
     def set_neuman_mat(self, mat: csr_matrix | None):
-        self.mats['neuman'] = mat
+        self.mats["neuman"] = mat
 
     def get_neuman_mat(self):
-        return self.mats['neuman']
+        return self.mats["neuman"]
 
     # Global mass for DtN
     def set_sigma_mass_mat(self, mat):
-        self.mats['sigma_mass'] = mat
-    def get_sigma_mass_mat(self):
-        return self.mats['sigma_mass']
+        self.mats["sigma_mass"] = mat
 
-    
+    def get_sigma_mass_mat(self):
+        return self.mats["sigma_mass"]
+
     def set_problem_mat(self, mat):
-        self.mats['problem'] = mat
+        self.mats["problem"] = mat
 
     def get_problem_mat(self):
-        return self.mats['problem']
-    
+        return self.mats["problem"]
+
     def set_rhs_mat(self, mat):
-        self.mats['rhs'] = mat
+        self.mats["rhs"] = mat
 
     def get_rhs_mat(self):
-        return self.mats['rhs']
-    
+        return self.mats["rhs"]
+
     def add_continuous_g_coarse(self, g_coarse: np.ndarray):
         self.continuous_g_coarse.append(g_coarse)
 
@@ -193,10 +199,10 @@ class Subdomain:
 
     def gen_global_coarse_space_contrib(self, global_size, offset):
         cs_size = len(self.continuous_g_coarse)
-        volume_size = self.mats['neuman'].shape[0]
+        volume_size = self.mats["neuman"].shape[0]
         if cs_size == 0:
             return None
-        
+
         zis_volume = np.zeros((volume_size, cs_size), dtype=np.complex128)
         bnd_dofs = self.get_bnd_dofs()
         zis_volume[bnd_dofs, :] = np.column_stack(self.continuous_g_coarse)
@@ -206,6 +212,6 @@ class Subdomain:
             _, proj, _ = self.gi[jdom]
             local_z = proj @ zis_volume
             local_spaces.append(local_z)
-        
+
         result = np.vstack(local_spaces)
         return result
