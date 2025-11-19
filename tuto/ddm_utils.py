@@ -6,6 +6,8 @@ from numpy import conjugate
 import scipy.sparse.linalg as spla
 import scipy.sparse
 
+from typing import Any
+
 from mesh_helpers import create_square, find_entities_on_domain
 import mesh_helpers
 
@@ -140,8 +142,8 @@ class Subdomain:
         self.facets_dict = mesh_helpers.buildFacetDict(self.mesh) # Pair of nodes to face ID
         self.all_sigma_facets = mesh_helpers.findFullSigma(sigma_tags, self.gmshToSK, self.facets_dict)
 
-        self.ker = []
-        self.gi = dict()
+        self.ker: list[dict[str, Any]] = []
+        self.gi: dict[int, tuple] = dict()
 
         self.mats = dict()
         self.continuous_g_coarse = []
