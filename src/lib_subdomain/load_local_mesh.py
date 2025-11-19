@@ -60,6 +60,23 @@ class LocalGeometry:
         self.sigma_facets = self._find_sigma()
         self.all_sigma_facets = [f for facets in self.sigma_facets.values() for f in facets]
 
+    def build_bases(self, order: int = 1):
+        assert self.mesh is not None, "mesh not built"
+        assert order == 1, "Only order 1 is supported currently"
+        self.volume_basis = skfem.Basis(self.mesh, skfem.ElementTriP1())
+        self.gamma_basis = skfem.FacetBasis(self.mesh, skfem.ElementTriP1(), facets=self.gamma_facets)
+        for j, facets in self.sigma_facets.items():
+            self.sigma_basis[j] = skfem.FacetBasis(self.mesh, skfem.ElementTriP1(), facets=list(facets))
+
+    def dofs_on_interface(self, j: int) -> np.ndarray:
+        assert j in self.sigma_basis, f"No sigma basis for partition {j}"
+        basis = self.sigma_basis[j]
+        dofs = basis.get_dofs(facets=list(self.sigma_facets[j])).flatten()
+        return dofs
+    
+    def all_neighboring_partitions(self) -> list[int]:
+        return sorted(self.sigma_tags.keys())
+
     def _find_sigma(self):
         facets: dict[int, set[int]] = {}
 
@@ -106,3 +123,10 @@ if __name__ == "__main__":
     print("Gamma facets:", dom.gamma_facets)
     print("Sigma facets:", dom.sigma_facets)
     print("All sigma facets:", dom.all_sigma_facets)
+    dom.build_bases(order=1)
+    print("Volume basis size:", dom.volume_basis.N)
+    print("Sigma bases sizes:", {j: b.N for j, b in dom.sigma_basis.items()})
+    print("Gamma basis size:", len(dom.gamma_basis.get_dofs(facets=dom.gamma_facets).flatten()))
+    for j in dom.all_neighboring_partitions():
+        dofs = dom.dofs_on_interface(j)
+        print(f"DOFs on interface with partition {j}:", len(dofs))
