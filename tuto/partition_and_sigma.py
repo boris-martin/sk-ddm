@@ -39,7 +39,6 @@ center_of_mass = np.mean(skfem_points, axis=1)
 # Index to closest point to center of mass
 distances = np.linalg.norm(skfem_points - center_of_mass[:, np.newaxis], axis=0)
 center_idx = np.argmin(distances)
-print(f"Center of mass: {center_of_mass}, closest node index: {center_idx}, coords: {skfem_points[:, center_idx]}")
 
 mesh = MeshTri(skfem_points, skfem_elements)
 facets_dict = mesh_helpers.buildFacetDict(mesh)

@@ -204,13 +204,15 @@ for idom in range(1, ndom+1):
     A_s = skfem.asm(transmission, global_sigma_basis, k=k)
 
     print(f"Domain {idom} generalized EVP eigenvalues (neuman * X = lambda * sigma_mass * X):")
-    for l in range(nev):
-        print(f"  Eigenvalue {l}: {eigvals[l]}")
-        ev = eigvals[l]
-        x = eigvecs[:, l]
+    for evidx in range(nev):
+        print(f"  Eigenvalue {evidx}: {eigvals[evidx]}")
+        ev = eigvals[evidx]
+        x = eigvecs[:, evidx]
         g_continuous = ev * x
         # g = lambda x + M^-1 A_S x where A_s is the absorption mat
-        g_continuous[bnd_dofs] += scipy.sparse.linalg.spsolve(sigma_mass_restricted, (A_s @ x)[bnd_dofs])
+        g_continuous[bnd_dofs] += scipy.sparse.linalg.spsolve(
+            sigma_mass_restricted,
+            (A_s @ x)[bnd_dofs])
         subdomain.add_continuous_g_coarse(g_continuous[bnd_dofs])
 
     # local coarse space
@@ -240,7 +242,10 @@ for idom in range(1, ndom+1):
         local_source = np.zeros(mesh.nvertices, dtype=np.complex128)
     else:
         gamma_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=gamma_facets)
-        local_source = skfem.asm(plane_wave.plane_wave, gamma_basis, k=k, theta=theta).astype(np.complex128)
+        local_source = skfem.asm(plane_wave.plane_wave,
+                                gamma_basis,
+                                k=k,
+                                theta=theta).astype(np.complex128)
 
     full_rhs = np.zeros(sum(sizes), dtype=np.complex128)
     full_rhs[0:mesh.nvertices] = local_source
@@ -506,8 +511,8 @@ print("RHS dot kernel vectors: ", abs(rhs_dot_ker))
 # Is it M-orthogonal ?
 rhs_dot_ker_M = np.conjugate(ker.T @ full_mass) @ (rhs)
 # Compute contributions of the dot per subdomain, before the summation
-for l in range(ker.shape[1]):
-    ker_vec = ker[:, l]
+for evidx in range(ker.shape[1]):
+    ker_vec = ker[:, evidx]
     piecewise_product = np.conjugate(ker_vec) * (full_s_mass @ rhs)
     for idom in range(1, ndom+1):
         start = istart[idom - 1]
