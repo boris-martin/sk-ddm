@@ -31,7 +31,7 @@ subdomains = []
 
 
 
-cross_points_gmsh_tags = set()
+cross_points_gmsh_tags: set[int] = set()
 
 wavelength = 0.2
 k = 2 * np.pi / wavelength

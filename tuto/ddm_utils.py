@@ -145,8 +145,8 @@ class Subdomain:
         self.ker: list[dict[str, Any]] = []
         self.gi: dict[int, tuple] = dict()
 
-        self.mats = dict()
-        self.continuous_g_coarse = []
+        self.mats: dict[str, scipy.sparse.csr_matrix | None] = dict()
+        self.continuous_g_coarse: list[np.ndarray] = []
 
     def get_g_size(self):
         total_size = 0
@@ -183,7 +183,7 @@ class Subdomain:
     def get_rhs_mat(self):
         return self.mats['rhs']
     
-    def add_continuous_g_coarse(self, g_coarse):
+    def add_continuous_g_coarse(self, g_coarse: np.ndarray):
         self.continuous_g_coarse.append(g_coarse)
 
     def get_bnd_dofs(self):
