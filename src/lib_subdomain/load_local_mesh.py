@@ -71,11 +71,18 @@ class LocalGeometry:
     def dofs_on_interface(self, j: int) -> np.ndarray:
         assert j in self.sigma_basis, f"No sigma basis for partition {j}"
         basis = self.sigma_basis[j]
-        dofs = basis.get_dofs(facets=list(self.sigma_facets[j])).flatten()
+        dofs = sorted(basis.get_dofs(facets=list(self.sigma_facets[j])).flatten())
         return dofs
     
     def all_neighboring_partitions(self) -> list[int]:
         return sorted(self.sigma_tags.keys())
+    
+    def local_g_size(self):
+        return sum(len(dom.dofs_on_interface(j)) for j in self.all_neighboring_partitions())
+    
+    def volume_size(self):
+        assert self.volume_basis is not None, "volume basis not built"
+        return self.volume_basis.N
 
     def _find_sigma(self):
         facets: dict[int, set[int]] = {}
@@ -130,3 +137,5 @@ if __name__ == "__main__":
     for j in dom.all_neighboring_partitions():
         dofs = dom.dofs_on_interface(j)
         print(f"DOFs on interface with partition {j}:", len(dofs))
+    print("Local g size:", dom.local_g_size())
+    print("Volume size:", dom.volume_size())
