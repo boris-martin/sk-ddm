@@ -8,6 +8,7 @@ from skfem.visuals.matplotlib import plot
 import matplotlib.pyplot as plt
 import gmsh
 import scipy.sparse.linalg
+import scipy.sparse
 
 from mesh_helpers import create_square, find_entities_on_domain
 import mesh_helpers
@@ -16,10 +17,10 @@ import scipy_helpers
 from ddm_utils import helmholtz, absorbing, mass_bnd, transmission, Subdomain
 
 from collections import defaultdict
-
+from typing import Dict, Tuple, Callable, List
 from crosspoints_helpers import circular_neighbors_triplets, build_cycle_2d, cycle_find_prev_and_next
 
-ndom = 30
+ndom = 20
 local_physical_sources = []
 local_solves = []
 all_g_masses = []
@@ -32,10 +33,10 @@ subdomains = []
 
 cross_points_gmsh_tags = set()
 
-wavelength = 1/7
+wavelength = 0.2
 k = 2 * np.pi / wavelength
 
-create_square(.015, ndom)
+create_square(.02, ndom)
 crosspoints_gmsh_node_tags = set()
 crosspoints_gmsh_to_graph = {}
 
@@ -58,25 +59,39 @@ crosspoints_gmsh_to_kernel_column = {tag: idx for idx, tag in enumerate(crosspoi
 
 
 # GPT fix
-def make_local_solve(gi, sizes, local_rhs_mat, local_mat, nvertices):
-    # Precompute for asserts and speed
-    actual_length = sum(proj.shape[0] for (j, (_, proj, _)) in gi.items())
-    total_size = sum(sizes)
+def make_local_solve(
+        gi: Dict[int, Tuple],
+        sizes: List[int],
+        local_rhs_mat: scipy.sparse.spmatrix,
+        local_mat: scipy.sparse.spmatrix,
+        nvertices: int,
+    ) -> Callable[[ np.ndarray ], np.ndarray]:
+        """
+        Build and return a closure that solves the local substructured DDM system.
+        Uses explicit exceptions instead of assertions to ensure shape validation
+        is preserved even under Python -O.
+        """
 
-    def local_solve(gloc):
-        # Basic sanity checks; useful while debugging
-        assert gloc.shape[0] == actual_length, (
-            f"Wrong length in local solve: expected {actual_length}, got {gloc.shape[0]}"
-        )
-        rhs = local_rhs_mat @ gloc
-        assert rhs.shape[0] == total_size, (
-            f"RHS size mismatch: expected {total_size}, got {rhs.shape[0]}"
-        )
-        u_and_g = scipy.sparse.linalg.spsolve(local_mat, rhs)
-        # Return only the interface part
-        return u_and_g[nvertices:]
+        actual_length = sum(proj.shape[0] for (_, (_, proj, _)) in gi.items())
+        total_size = sum(sizes)
 
-    return local_solve
+        def local_solve(gloc: np.ndarray) -> np.ndarray:
+            if gloc.shape[0] != actual_length:
+                raise ValueError(
+                    f"Wrong length in local solve: expected {actual_length}, got {gloc.shape[0]}"
+                )
+
+            rhs = local_rhs_mat @ gloc
+            if rhs.shape[0] != total_size:
+                raise ValueError(
+                    f"RHS size mismatch: expected {total_size}, got {rhs.shape[0]}"
+                )
+
+            u_and_g = scipy.sparse.linalg.spsolve(local_mat, rhs)
+            return u_and_g[nvertices:]  # only return interface part
+
+        return local_solve
+
 
 
 if ndom == 1:
