@@ -1,8 +1,9 @@
 import gmsh
 import numpy as np
-
 import skfem
+
 import src.tuto.mesh_helpers as mesh_helpers
+
 
 class LocalGeometry:
     def __init__(self, partition: int) -> None:
@@ -143,6 +144,7 @@ if __name__ == "__main__":
     print("Number of nodes:", dom.mesh.nvertices)
     print("Number of elements:", dom.mesh.nelements)
     dom.find_facets()
+    print("Isinitialized after finding facets:", dom.is_initialized())
     print("Gamma facets:", dom.gamma_facets)
     print("Sigma facets:", dom.sigma_facets)
     print("All sigma facets:", dom.all_sigma_facets)
@@ -155,3 +157,4 @@ if __name__ == "__main__":
         print(f"DOFs on interface with partition {j}:", len(dofs))
     print("Local g size:", dom.local_g_size())
     print("Volume size:", dom.volume_size())
+    print("Isinitialized:", dom.is_initialized())
