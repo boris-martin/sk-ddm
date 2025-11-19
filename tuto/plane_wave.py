@@ -1,6 +1,5 @@
 import numpy as np
 from skfem import LinearForm
-from skfem.helpers import dot
 
 
 @LinearForm(facet=True, dtype=np.complex128)

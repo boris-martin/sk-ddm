@@ -3,7 +3,7 @@ import gmsh
 import matplotlib.pyplot as plt
 import numpy as np
 import skfem
-from skfem import BilinearForm, ElementTriP1, FacetBasis, LinearForm, MeshTri
+from skfem import BilinearForm, ElementTriP1, LinearForm, MeshTri
 from skfem.visuals.matplotlib import plot
 
 gmsh.initialize()
@@ -97,7 +97,7 @@ for domain in partitionTags:
     print(M)
     b = skfem.asm(source, basis)
     # Solve M x = b
-    from scipy.sparse.linalg import lsqr, spsolve
+    from scipy.sparse.linalg import lsqr
     x = lsqr(M.tocsr(), b)[0]
     # Plot solution
     plot(basis, x, shading='gouraud', colorbar=True)

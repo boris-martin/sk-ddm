@@ -4,23 +4,22 @@ from typing import Callable, Dict, List, Tuple
 
 import gmsh
 import matplotlib.pyplot as plt
+import mesh_helpers
 import numpy as np
+import plane_wave
 import scipy.sparse
 import scipy.sparse.linalg
-import skfem
-from numpy import conjugate
-from scipy.sparse import csr_matrix
-from skfem import BilinearForm, ElementTriP1, FacetBasis, LinearForm, MeshTri
-from skfem.helpers import dot, grad
-from skfem.visuals.matplotlib import plot
-
-import mesh_helpers
-import plane_wave
 import scipy_helpers
-from crosspoints_helpers import (build_cycle_2d, circular_neighbors_triplets,
-                                 cycle_find_prev_and_next)
+import skfem
+from crosspoints_helpers import (
+    build_cycle_2d,
+    cycle_find_prev_and_next,
+)
 from ddm_utils import Subdomain, absorbing, helmholtz, mass_bnd, transmission
 from mesh_helpers import create_square, find_entities_on_domain
+from scipy.sparse import csr_matrix
+from skfem import ElementTriP1, FacetBasis, MeshTri
+from skfem.visuals.matplotlib import plot
 
 ndom = 20
 local_physical_sources = []
@@ -271,8 +270,7 @@ full_mass = scipy.sparse.block_diag(all_g_masses, format='csr')
 full_s_mass = scipy.sparse.block_diag(all_s_masses, format='csr')
 
 
-from ddm_utils import (LocalDDMSolver, build_full_rhs,
-                       build_offsets_and_total_size)
+from ddm_utils import LocalDDMSolver, build_full_rhs, build_offsets_and_total_size
 
 offsets, istart, total_g_size = build_offsets_and_total_size(subdomains)
 print("Total g size: ", total_g_size)
@@ -359,7 +357,6 @@ if False:
 """
 import scipy.sparse.linalg as spla
 from numpy.linalg import svd
-from scipy.sparse.linalg import svds
 
 #u, s, vt = svds(ddm_op.T, k=6, which='SM')
 #print("Singular vlaues: ", s)

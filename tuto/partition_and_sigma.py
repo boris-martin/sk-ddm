@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-import gmsh
 import matplotlib.pyplot as plt
+import mesh_helpers
 import numpy as np
+import plane_wave
 import skfem
-from skfem import BilinearForm, ElementTriP1, FacetBasis, LinearForm, MeshTri
+from mesh_helpers import create_square, find_entities_on_domain
+from skfem import BilinearForm, ElementTriP1, LinearForm, MeshTri
 from skfem.helpers import dot, grad
 from skfem.visuals.matplotlib import plot
-
-import mesh_helpers
-import plane_wave
-from mesh_helpers import create_square, find_entities_on_domain
 
 create_square(.01, 17)
 
