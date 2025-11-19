@@ -51,7 +51,7 @@ def build_cycle_2d(partition_vertex_tag: int):
     # Now, partition_to_neighbor_set contains for each partition the set of its neighbors
     for p, neighbors in partition_to_neighbor_set.items():
         if len(neighbors) != 2:
-            raise ValueError(f"Partition {p} does not have exactly 2 neighbors, has {len(neighbors)}")
+            raise ValueError(f"Partition {p} does not have 2 neighbors, but {len(neighbors)}")
     
     # pick an arbitrary start
     start = next(iter(partition_to_neighbor_set))

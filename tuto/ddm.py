@@ -104,12 +104,17 @@ if ndom == 1:
     basis = skfem.Basis(mesh, ElementTriP1())
     fbasis = skfem.FacetBasis(mesh, ElementTriP1())  # all exterior facets
     A = skfem.asm(helmholtz, basis, k=k) + skfem.asm(absorbing, fbasis, k=k)
-    gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, gmshToSK, mesh_helpers.buildFacetDict(mesh))
+    gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags,
+                                                gmshToSK,
+                                                mesh_helpers.buildFacetDict(mesh))
     if len(gamma_facets) == 0:
         local_source = np.zeros(mesh.nvertices, dtype=np.complex128)
     else:
         gamma_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=gamma_facets)
-        local_source = skfem.asm(plane_wave.plane_wave, gamma_basis, k=k, theta=theta).astype(np.complex128)
+        local_source = skfem.asm(plane_wave.plane_wave,
+                                gamma_basis,
+                                k=k,
+                                theta=theta).astype(np.complex128)
     u = scipy.sparse.linalg.spsolve(A, local_source)
     print("Mono domain solution norm: ", np.linalg.norm(u))
     plot(mesh, np.real(u), shading='gouraud')
@@ -135,10 +140,15 @@ for idom in range(1, ndom+1):
         for edge in subdomain.all_sigma_facets[j]:
             for node in mesh.facets[:, edge]:
                 nodeSet.update({node})
-        function_space = skfem.FacetBasis(mesh, ElementTriP1(), facets=subdomain.all_sigma_facets[j])
+        function_space = skfem.FacetBasis(mesh,
+                                        ElementTriP1(),
+                                        facets=subdomain.all_sigma_facets[j])
         for node in nodeSet:
             nodesToJset[subdomain.SKToGmsh[node]].add(j)
-        projector, sk_to_g = scipy_helpers.restriction_matrix(mesh.nvertices, list(nodeSet), subdomain.SKToGmsh, subdomain.gmshToSK)
+        projector, sk_to_g = scipy_helpers.restriction_matrix(mesh.nvertices,
+                                                            list(nodeSet),
+                                                            subdomain.SKToGmsh,
+                                                            subdomain.gmshToSK)
         gi[j] = (function_space, projector, sk_to_g)
 
 
@@ -148,7 +158,10 @@ for idom in range(1, ndom+1):
             partitions = crosspoints_gmsh_to_graph[node_gmsh]
             prev, next = cycle_find_prev_and_next(partitions, idom)
             crosspoint_tag = crosspoints_gmsh_to_kernel_column[node_gmsh]
-            print(f"Found kernel mode {crosspoint_tag} on domain {idom} at node {node_gmsh} shared with partitions {partitions}. Prev is {prev}, next is {next}")
+            print(f"""
+                  Found kernel mode {crosspoint_tag} on domain {idom} at node {node_gmsh},
+                shared on parts {partitions}.
+                Prev is {prev}, next is {next}""")
             print("Local node value is at skfem node ", node_sk)
             subdomain.add_kernel_mode(crosspoint_tag, node_sk, next, prev)
 
@@ -156,15 +169,20 @@ for idom in range(1, ndom+1):
     print("Local sizes (u and each g): ", sizes)
     num_interface_fields = len(gi)
 
-    gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, subdomain.gmshToSK, subdomain.facets_dict)
+    gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags,
+                                                subdomain.gmshToSK,
+                                                subdomain.facets_dict)
     print("gamma_facets has size ", len(gamma_facets))
 
-    mats: list[list[csr_matrix | None]] = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
+    mats: list[list[csr_matrix | None]] = [[None for _ in range(num_interface_fields + 1)]
+                                            for _ in range(num_interface_fields + 1)]
     mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k)
     if len(gamma_facets) > 0:
-        mats[0][0] += skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1(), facets=gamma_facets), k=k)
+        mats[0][0] += skfem.asm(absorbing,
+                                FacetBasis(mesh, ElementTriP1(), facets=gamma_facets), k=k)
 
-    subdomain.set_neuman_mat(scipy.sparse.csr_matrix(mats[0][0]) if mats[0][0] is not None else None) # Deep copy
+    subdomain.set_neuman_mat(
+        scipy.sparse.csr_matrix(mats[0][0]) if mats[0][0] is not None else None) # Deep copy
     all_sigma = np.concatenate(list(subdomain.all_sigma_facets.values()))
     global_sigma_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=all_sigma)
     subdomain.set_sigma_mass_mat(skfem.asm(mass_bnd, global_sigma_basis, k=k))
