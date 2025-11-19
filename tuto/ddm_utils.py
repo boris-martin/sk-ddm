@@ -200,16 +200,12 @@ class Subdomain:
         zis_volume = np.zeros((volume_size, cs_size), dtype=np.complex128)
         bnd_dofs = self.get_bnd_dofs()
         zis_volume[bnd_dofs, :] = np.column_stack(self.continuous_g_coarse)
-        zis_g = np.zeros((global_size, cs_size), dtype=np.complex128)
-        #print("zis_volume shape:", zis_volume.shape)
-        #print("zis_g shape:", zis_g.shape)
+        np.zeros((global_size, cs_size), dtype=np.complex128)
         local_spaces = []
         for jdom in sorted(self.gi.keys()):
-            #print("For j = ", jdom, ": proj has shape ", self.gi[jdom][1].shape)
             _, proj, _ = self.gi[jdom]
             local_z = proj @ zis_volume
             local_spaces.append(local_z)
         
         result = np.vstack(local_spaces)
-        #print("Resulting coarse space shape:", result.shape)
         return result

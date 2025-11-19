@@ -15,7 +15,7 @@ def create_square(lc = 0.02, ndom = 2, name="square"):
     l3 = gmsh.model.geo.addLine(p3, p4)
     l4 = gmsh.model.geo.addLine(p4, p1)
     cl = gmsh.model.geo.addCurveLoop([l1, l2, l3, l4])
-    s1 = gmsh.model.geo.addPlaneSurface([cl])
+    gmsh.model.geo.addPlaneSurface([cl])
     gmsh.model.geo.synchronize()
     gmsh.model.mesh.generate(2)
     gmsh.model.mesh.partition(ndom)
