@@ -9,14 +9,22 @@ import numpy as np
 import plane_wave
 import scipy.sparse
 import scipy.sparse.linalg
+import scipy.sparse.linalg as spla
 import scipy_helpers
 import skfem
-from crosspoints_helpers import (
-    build_cycle_2d,
-    cycle_find_prev_and_next,
+from crosspoints_helpers import build_cycle_2d, cycle_find_prev_and_next
+from ddm_utils import (
+    LocalDDMSolver,
+    Subdomain,
+    absorbing,
+    build_full_rhs,
+    build_offsets_and_total_size,
+    helmholtz,
+    mass_bnd,
+    transmission,
 )
-from ddm_utils import Subdomain, absorbing, helmholtz, mass_bnd, transmission
 from mesh_helpers import create_square, find_entities_on_domain
+from numpy.linalg import svd
 from scipy.sparse import csr_matrix
 from skfem import ElementTriP1, FacetBasis, MeshTri
 from skfem.visuals.matplotlib import plot
@@ -253,7 +261,9 @@ for idom in range(1, ndom+1):
 
     subdomain.set_problem_mat(scipy_helpers.bmat(mats))
 
-    b_substructured = scipy.sparse.linalg.spsolve(subdomain.get_problem_mat(), full_rhs)[mesh.nvertices:]
+    b_substructured = scipy.sparse.linalg.spsolve(
+        subdomain.get_problem_mat(),
+        full_rhs)[mesh.nvertices:]
     phys_b.append(b_substructured)
     # Now, mats goes from the gs to the local solution including u
     # So, structure is num_interface_fields to num_interface_fields + 1
@@ -293,7 +303,6 @@ full_mass = scipy.sparse.block_diag(all_g_masses, format='csr')
 full_s_mass = scipy.sparse.block_diag(all_s_masses, format='csr')
 
 
-from ddm_utils import LocalDDMSolver, build_full_rhs, build_offsets_and_total_size
 
 offsets, istart, total_g_size = build_offsets_and_total_size(subdomains)
 print("Total g size: ", total_g_size)
@@ -330,56 +339,32 @@ def ddm_operator(g):
     return g_solved
 
 
-all_coarse_spaces = [subdomains[i].gen_global_coarse_space_contrib(total_g_size, istart[i]) for i in range(ndom)]
+all_coarse_spaces = [subdomains[i].gen_global_coarse_space_contrib(total_g_size, istart[i])
+                    for i in range(ndom)]
 print("All coarse spaces shapes: ", [cs.shape for cs in all_coarse_spaces])
 total_cs_size = sum(cs.shape[1] for cs in all_coarse_spaces if cs is not None)
 print("Total coarse space size: ", total_cs_size)
 Z = np.zeros((total_g_size, total_cs_size), dtype=np.complex128)
 for i, cs in enumerate(all_coarse_spaces):
     if cs is not None:
-        start_col = sum(all_coarse_spaces[j].shape[1] for j in range(i) if all_coarse_spaces[j] is not None)
+        start_col = sum(all_coarse_spaces[j].shape[1] for j in range(i)
+                         if all_coarse_spaces[j] is not None)
         end_col = start_col + cs.shape[1]
         start_row = istart[i]
         end_row = istart[i+1]
         Z[start_row:end_row, start_col:end_col] = cs
 
 
-#plt.spy(Z, markersize=1)
-print("Shape of Z: ", Z.shape, " rank of Z and AZ", np.linalg.matrix_rank(Z, tol=1e-8), np.linalg.matrix_rank(ddm_op.A @ Z, tol=1e-8))
+print("Shape of Z: ", Z.shape, " rank of Z and AZ", 
+    np.linalg.matrix_rank(Z, tol=1e-8),
+    np.linalg.matrix_rank(ddm_op.A @ Z, tol=1e-8))
 ZAZ = np.conjugate(Z.T) @ (ddm_op.A @ Z)
 rank_zaz = np.linalg.matrix_rank(ZAZ, tol=1e-8)
 print("Rank of Z^* A Z: ", rank_zaz, " out of ", ZAZ.shape[0])
 
-#plt.show()
 
 ddm_dense = ddm_op.A @ np.eye(total_g_size, dtype=np.complex128)
 
-"""
-x, info = scipy.sparse.linalg.gmres(ddm_op.A, rhs, rtol=1e-6, callback=lambda r: print("GMRES residual: ", r))
-#print(x, info)
-ddm_dense = ddm_op.A @ np.eye(total_g_size, dtype=np.complex128)
-x_dense = np.linalg.solve(np.eye(total_g_size) - ddm_dense, rhs)
-print("Norm of RHS: ", np.linalg.norm(rhs))
-print("Residual: ", np.linalg.norm(ddm_op.A @ x_dense - rhs)/np.linalg.norm(rhs))
-
-# Build full solution
-if False:
-    x = swap @ x
-    for idom in range(1, ndom+1):
-        working_range_start = istart[idom - 1]
-        working_range_end = istart[idom]
-        gloc = x[working_range_start:working_range_end]
-        artifical_source = local_rhs_mats[idom-1] @ gloc
-        physical_source = local_physical_sources[idom-1]
-        mesh = subdomains[idom-1].mesh
-        u_local = scipy.sparse.linalg.spsolve(local_mats[idom-1], artifical_source+physical_source)[0:mesh.nvertices]
-        print(f"Domain {idom} local solution norm: ", np.linalg.norm(u_local))
-        print("Shape and nvertices : ", u_local.shape, subdomains[idom-1].mesh.nvertices)
-        plot(subdomains[idom-1].mesh, np.real(u_local[:mesh.nvertices]), shading='gouraud')
-        plt.show()
-"""
-import scipy.sparse.linalg as spla
-from numpy.linalg import svd
 
 #u, s, vt = svds(ddm_op.T, k=6, which='SM')
 #print("Singular vlaues: ", s)
