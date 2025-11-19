@@ -90,6 +90,15 @@ class LocalGeometry:
         self.find_facets()
         self.build_bases(order=1)
 
+    def is_initialized(self) -> bool:
+        return (
+            self.omega_tag is not None and
+            self.mesh is not None and
+            self.sigma_facets != {} and
+            self.volume_basis is not None and
+            self.sigma_basis != {}
+        )
+
 
     def _find_sigma(self):
         facets: dict[int, set[int]] = {}
