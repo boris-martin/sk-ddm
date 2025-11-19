@@ -3,6 +3,7 @@ repos:
     rev: v0.4.6
     hooks:
       - id: ruff
-        args: [ "--fix", "tuto" ]
+        args: [ "--fix" ]
+        files: ^tuto/.*\.py$
       - id: ruff-format
-        args: [ "tuto" ]
+        files: ^tuto/.*\.py$
