@@ -5,6 +5,7 @@ from skfem.helpers import grad, dot
 from numpy import conjugate
 import scipy.sparse.linalg as spla
 import scipy.sparse
+from scipy.sparse import csr_matrix
 
 from typing import Any
 
@@ -85,7 +86,7 @@ class LocalDDMSolver:
 
         return g_solved
     
-    def set_swap(self, swap_op: scipy.sparse.csr_matrix):
+    def set_swap(self, swap_op: csr_matrix):
         """Set a swap operator to be applied after local solves."""
         self.swap = swap_op
         self.T = spla.LinearOperator(
@@ -145,7 +146,7 @@ class Subdomain:
         self.ker: list[dict[str, Any]] = []
         self.gi: dict[int, tuple] = dict()
 
-        self.mats: dict[str, scipy.sparse.csr_matrix | None] = dict()
+        self.mats: dict[str, csr_matrix | None] = dict()
         self.continuous_g_coarse: list[np.ndarray] = []
 
     def get_g_size(self):
@@ -158,7 +159,7 @@ class Subdomain:
     def add_kernel_mode(self, kernel_column: int, node_sk: int, jplus: int, jminus: int):
         self.ker.append({'kernel_column': kernel_column, 'node_sk': node_sk, 'jplus': jplus, 'jminus': jminus})
 
-    def set_neuman_mat(self, mat):
+    def set_neuman_mat(self, mat: csr_matrix | None):
         self.mats['neuman'] = mat
 
     def get_neuman_mat(self):

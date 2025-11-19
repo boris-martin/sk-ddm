@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import gmsh
 import scipy.sparse.linalg
 import scipy.sparse
+from scipy.sparse import csr_matrix
 
 from mesh_helpers import create_square, find_entities_on_domain
 import mesh_helpers
@@ -158,12 +159,12 @@ for idom in range(1, ndom+1):
     gamma_facets = mesh_helpers.findFacetsGamma(gamma_tags, subdomain.gmshToSK, subdomain.facets_dict)
     print("gamma_facets has size ", len(gamma_facets))
 
-    mats = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
+    mats: list[list[csr_matrix | None]] = [[None for _ in range(num_interface_fields + 1)] for _ in range(num_interface_fields + 1)]
     mats[0][0] = skfem.asm(helmholtz, skfem.Basis(mesh, ElementTriP1()), k=k)
     if len(gamma_facets) > 0:
         mats[0][0] += skfem.asm(absorbing, FacetBasis(mesh, ElementTriP1(), facets=gamma_facets), k=k)
 
-    subdomain.set_neuman_mat(scipy.sparse.csr_matrix(mats[0][0])) # Deep copy
+    subdomain.set_neuman_mat(scipy.sparse.csr_matrix(mats[0][0]) if mats[0][0] is not None else None) # Deep copy
     all_sigma = np.concatenate(list(subdomain.all_sigma_facets.values()))
     global_sigma_basis = skfem.FacetBasis(mesh, ElementTriP1(), facets=all_sigma)
     subdomain.set_sigma_mass_mat(skfem.asm(mass_bnd, global_sigma_basis, k=k))
@@ -467,8 +468,8 @@ if True:
     plt.xlabel("Real part")
     plt.ylabel("Imaginary part")
     # Plot unit circle for reference
-    theta = np.linspace(0, 2*np.pi, 100)
-    plt.plot(np.cos(theta)+1, np.sin(theta), 'r--', label='Unit Circle')
+    thetas = np.linspace(0, 2*np.pi, 100)
+    plt.plot(np.cos(thetas)+1, np.sin(thetas), 'r--', label='Unit Circle')
     plt.grid()
     plt.show()
 
