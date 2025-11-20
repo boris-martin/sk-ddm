@@ -2,6 +2,8 @@
 # We first import petsc4py and sys to initialize PETSc
 import sys, petsc4py
 petsc4py.init(sys.argv)
+from typing import Dict, List, Tuple
+from typing import cast
 # Import the PETSc module
 from petsc4py import PETSc
 
@@ -52,7 +54,7 @@ def transmission(u, v, w):
     k_eff = k * (1.0 + np.sin(x[0] * 4 * 3.1415) ** 2) * x_left + k * (
         1.0 + np.cos(x[0] * 4 * 3.1415) ** 2
     ) * (~x_left)
-    k_eff = k # ignore heterogeneity for transmission
+    k_eff = k  # ignore heterogeneity for transmission
     return np.complex128(-(1j-0.1)* k_eff * u * conjugate(v))
 
 
@@ -62,7 +64,7 @@ class Formulation:
     def __init__(self, domains: SubdomainsOnMyRank, k: float):
         self.domains: SubdomainsOnMyRank = domains
         self.k = k
-        self.volume_mats: list[csr_matrix]
+        self.volume_mats: List[csr_matrix]
         self.local_masses: dict[tuple[int, int], csr_matrix] = {}
         self.local_transmission: dict[tuple[int, int], csr_matrix] = {}
         self.swap: PETSc.Mat = domains.build_swap_operator()
@@ -113,7 +115,7 @@ class Formulation:
             dom = self.domains.subdomains[iidx]
             offset = self.domains.offset_of_domain(i)
             g_size = self.domains.g_vector_size_for_domain(i)
-            #print("For domain ", i, " g-size=", g_size)
+            # print("For domain ", i, " g-size=", g_size)
 
             rhs = np.zeros(dom.volume_size(), dtype=np.complex128)
             for j in dom.all_neighboring_partitions():
@@ -122,7 +124,7 @@ class Formulation:
                     if offsets[0][idx] == i and offsets[1][idx] == j:
                         local_offset = offsets[2][idx]
                         break
-                dofs = dom.dofs_on_interface(j)
+                dofs = cast(List[int], dom.dofs_on_interface(j))
                 mass_g = self.local_masses[(i, j)] @ y_numpy[local_offset:local_offset+len(dofs)]
                 rhs[dofs] += mass_g
 
@@ -215,7 +217,7 @@ if __name__ == "__main__":
     formulation.assemble_volume()
     formulation.assemble_interface_mats()
 
-    f: dict[int, np.ndarray] = {}
+    f: Dict[int, np.ndarray] = {}
     for i in subdomains_on_rank.partitions:
         dom = subdomains_on_rank.find_domain(i)
         f[i] = np.ones(dom.volume_size(), dtype=np.complex128) if i == 2 else np.zeros(dom.volume_size(), dtype=np.complex128)
@@ -232,7 +234,7 @@ if __name__ == "__main__":
     A.mult(rhs, x)
     #x.view()
 
-    ksp = PETSc.KSP().create()
+    ksp = PETSc.KSP().create()  # noqa: F841
     ksp.setOperators(A)
     ksp.setFromOptions()
     ksp.solve(rhs, x)
