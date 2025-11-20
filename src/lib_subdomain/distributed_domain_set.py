@@ -31,6 +31,10 @@ class SubdomainsOnMyRank:
     def g_vector_local_size(self) -> int:
         return sum(len(dom.dofs_on_interface(j)) for dom in self.subdomains for j in dom.all_neighboring_partitions())
     
+    def g_vector_size_for_domain(self, i: int) -> int:
+        dom = self.subdomains[self.partitions.index(i)]
+        return sum(len(dom.dofs_on_interface(j)) for j in dom.all_neighboring_partitions())
+
     def create_petsc_g_vector(self) -> PETSc.Vec:
         local_size = self.g_vector_local_size()
         g_vector = PETSc.Vec().createMPI((local_size, PETSc.DECIDE), comm=MPI.COMM_WORLD)
