@@ -31,6 +31,12 @@ class SubdomainsOnMyRank:
     def g_vector_local_size(self) -> int:
         return sum(len(dom.dofs_on_interface(j)) for dom in self.subdomains for j in dom.all_neighboring_partitions())
     
+    def find_domain(self, i: int) -> LocalGeometry:
+        if i in self.partitions:
+            return self.subdomains[self.partitions.index(i)]
+        else:
+            raise ValueError(f"Subdomain {i} not found on this rank.")
+    
     def g_vector_size_for_domain(self, i: int) -> int:
         dom = self.subdomains[self.partitions.index(i)]
         return sum(len(dom.dofs_on_interface(j)) for j in dom.all_neighboring_partitions())
