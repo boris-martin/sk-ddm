@@ -84,6 +84,9 @@ class LocalGeometry:
     def volume_size(self):
         assert self.volume_basis is not None, "volume basis not built"
         return self.volume_basis.N
+    
+    def has_gamma(self):
+        return len(self.gamma_facets) > 0
 
     def init_all(self):
         self.discover_entities()

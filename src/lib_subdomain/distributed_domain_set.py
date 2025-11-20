@@ -24,8 +24,9 @@ def rank_of_domain(domain_id: int, num_domains: int) -> int:
 class SubdomainsOnMyRank:
     def __init__(self, ndomains: int):
         # So far, we assume all partitions are in a unique file
+        self.ndomains = ndomains
         self.partitions = evenly_distribute_domains(ndomains)
-        self.subdomains = [LocalGeometry(partition=p) for p in self.partitions]
+        self.subdomains: list[LocalGeometry] = [LocalGeometry(partition=p) for p in self.partitions]
 
     def g_vector_local_size(self) -> int:
         return sum(len(dom.dofs_on_interface(j)) for dom in self.subdomains for j in dom.all_neighboring_partitions())
@@ -176,7 +177,7 @@ class SubdomainsOnMyRank:
 
 if __name__ == "__main__":
     print("Distributed domain assignment:")
-    num_total_domains = 2  # Example total number of domains
+    num_total_domains = 3  # Example total number of domains
     assigned_domains = evenly_distribute_domains(num_total_domains)
     print(f"Process {MPI.COMM_WORLD.Get_rank()} assigned domains: {assigned_domains}")
     print("Rank of all domains: ", [rank_of_domain(i + 1, num_total_domains) for i in range(num_total_domains)])
