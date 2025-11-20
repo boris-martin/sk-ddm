@@ -9,6 +9,7 @@ from petsc4py import PETSc
 from src.lib_subdomain.distributed_domain_set import SubdomainsOnMyRank
 from src.lib_subdomain.load_local_mesh import LocalGeometry
 from src.tuto.mesh_helpers import create_square
+import math
 
 from skfem import BilinearForm, LinearForm
 from skfem.helpers import dot, grad
@@ -47,10 +48,10 @@ def transmission(u, v, w):
     k = w["k"]
     x = w["x"]
     # Mask for knowing if x[0] < 0.5
-    x_left = x[0] < 0.5
+    x_left = x[0] < 0.5  # Unused in current implementation
 
-    # k eff = k * (1 + x²)
-    k_eff = k * (1.0 + np.sin(x[0] * 4 * 3.1415) ** 2) * x_left + k * (
+    # k eff = k * (1 + x²) - currently unused
+    k_eff = k * (1.0 + np.sin(x[0] * 4 * math.pi) ** 2) * x_left + k * (
         1.0 + np.cos(x[0] * 4 * 3.1415) ** 2
     ) * (~x_left)
     k_eff = k  # ignore heterogeneity for transmission
