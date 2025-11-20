@@ -1,4 +1,3 @@
-
 # We first import petsc4py and sys to initialize PETSc
 import sys, petsc4py
 petsc4py.init(sys.argv)
