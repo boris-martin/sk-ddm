@@ -55,6 +55,17 @@ class SubdomainsOnMyRank:
                 current_offset += dof_count
         return iset, jset, offsets
     
+    def offset_of_domain(self, i: int) -> int:
+        """
+        Returns the starting offset of subdomain i in the rank-local g-vector numbering.
+        i is 1-based.
+        """
+        iset, jset, offsets = self.local_offset_list()
+        for idx, subdomain_id in enumerate(iset):
+            if subdomain_id == i:
+                return offsets[idx]
+        raise ValueError(f"Subdomain {i} not found on this rank.")
+
     def build_swap_operator(self) -> PETSc.Mat:
         """
         Build a PETSc permutation matrix S such that
