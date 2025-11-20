@@ -24,6 +24,8 @@ class LocalGeometry:
         self.gamma_basis: skfem.FacetBasis | None = None
         self.sigma_basis: dict[int, skfem.FacetBasis] = {}
 
+        self.dof_interface_dict: dict[int, np.ndarray] = {}
+
     def discover_entities(self) -> None:
         entities_2d = gmsh.model.getEntities(2)
         for dim, tag in entities_2d:
@@ -71,8 +73,12 @@ class LocalGeometry:
 
     def dofs_on_interface(self, j: int) -> np.ndarray:
         assert j in self.sigma_basis, f"No sigma basis for partition {j}"
+        if j in self.dof_interface_dict:
+            return self.dof_interface_dict[j]
+        
         basis = self.sigma_basis[j]
         dofs = sorted(basis.get_dofs(facets=list(self.sigma_facets[j])).flatten())
+        self.dof_interface_dict[j] = np.array(dofs)
         return dofs
     
     def all_neighboring_partitions(self) -> list[int]:

@@ -108,6 +108,18 @@ class Formulation:
                 self.local_masses[(i, j)] = M_reduced.tocsr()
                 self.mass_fact[(i, j)] = splu(M_reduced.tocsr())
                 self.local_transmission[(i, j)] = S_reduced.tocsr()
+
+        # setup cached offsets
+        self.offset_ij_cache: Dict[Tuple[int, int], int] = {}
+        offsets = self.domains.local_offset_list()
+        for iidx, i in enumerate(self.domains.partitions):
+            for j in self.domains.subdomains[iidx].all_neighboring_partitions():
+                # find idx in the offsets list
+                for idx in range(len(offsets[0])):
+                    if offsets[0][idx] == i and offsets[1][idx] == j:
+                        local_offset = offsets[2][idx]
+                        break
+                self.offset_ij_cache[(i, j)] = local_offset
     @profile
     def apply_scatter(self, x: PETSc.Vec, y: PETSc.Vec):
         """
@@ -129,11 +141,7 @@ class Formulation:
 
             rhs = np.zeros(dom.volume_size(), dtype=np.complex128)
             for j in dom.all_neighboring_partitions():
-                # find idx in the offsets list
-                for idx in range(len(offsets[0])):
-                    if offsets[0][idx] == i and offsets[1][idx] == j:
-                        local_offset = offsets[2][idx]
-                        break
+                local_offset = self.offset_ij_cache[(i, j)]
                 dofs = cast(List[int], dom.dofs_on_interface(j))
                 mass_g = self.local_masses[(i, j)] @ y_numpy[local_offset:local_offset+len(dofs)]
                 rhs[dofs] += mass_g
@@ -141,11 +149,8 @@ class Formulation:
             #u_i = spsolve(self.volume_mats[iidx], rhs)
             u_i = self.volume_fact[iidx].solve(rhs)
             for j in dom.all_neighboring_partitions():
-                # find idx in the offsets list
-                for idx in range(len(offsets[0])):
-                    if offsets[0][idx] == i and offsets[1][idx] == j:
-                        local_offset = offsets[2][idx]
-                        break
+                
+                local_offset = self.offset_ij_cache[(i, j)]
                 dofs = dom.dofs_on_interface(j)
                 su = self.local_transmission[(i, j)] @ u_i[dofs]
                 #m_inv_su = spsolve(self.local_masses[(i, j)], su)
