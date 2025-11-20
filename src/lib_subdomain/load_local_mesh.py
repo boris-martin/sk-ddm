@@ -65,7 +65,7 @@ class LocalGeometry:
         assert self.mesh is not None, "mesh not built"
         assert order == 1, "Only order 1 is supported currently"
         self.volume_basis = skfem.Basis(self.mesh, skfem.ElementTriP1())
-        self.gamma_basis = skfem.FacetBasis(self.mesh, skfem.ElementTriP1(), facets=self.gamma_facets)
+        self.gamma_basis = skfem.FacetBasis(self.mesh, skfem.ElementTriP1(), facets=self.gamma_facets) if len(self.gamma_facets) > 0 else None
         for j, facets in self.sigma_facets.items():
             self.sigma_basis[j] = skfem.FacetBasis(self.mesh, skfem.ElementTriP1(), facets=list(facets))
 
@@ -86,7 +86,7 @@ class LocalGeometry:
         return self.volume_basis.N
     
     def has_gamma(self):
-        return len(self.gamma_facets) > 0
+        return self.gamma_basis is not None and len(self.gamma_facets) > 0
 
     def init_all(self):
         self.discover_entities()

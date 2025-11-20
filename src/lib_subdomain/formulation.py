@@ -17,7 +17,7 @@ import skfem
 import numpy as np
 from numpy import conjugate
 from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import LinearOperator, spsolve
+from scipy.sparse.linalg import LinearOperator, spsolve, splu
 
 
 @BilinearForm
@@ -69,15 +69,21 @@ class Formulation:
         self.local_transmission: dict[tuple[int, int], csr_matrix] = {}
         self.swap: PETSc.Mat = domains.build_swap_operator()
 
+        self.volume_fact: List = []
+        self.mass_fact: dict[tuple[int, int], object] = {}
+
     def assemble_volume(self):
         self.volume_mats = []
+        self.volume_fact = []
         for dom in self.domains.subdomains:
             A = skfem.asm(helmholtz, dom.volume_basis , k=self.k)
             if dom.has_gamma():
                 A += skfem.asm(absorbing, dom.gamma_basis, k=self.k)
             for _, basis in dom.sigma_basis.items():
                 A += skfem.asm(transmission, basis, k=self.k)
-            self.volume_mats.append(A.tocsr())
+            A = A.tocsr()
+            self.volume_mats.append(A)
+            self.volume_fact.append(splu(A))
         assert len(self.volume_mats) == len(self.domains.subdomains)
 
     def assemble_interface_mats(self):
@@ -99,6 +105,7 @@ class Formulation:
                 M_reduced = M[gdofs, :][:, gdofs]
                 S_reduced = S[gdofs, :][:, gdofs]
                 self.local_masses[(i, j)] = M_reduced.tocsr()
+                self.mass_fact[(i, j)] = splu(M_reduced.tocsr())
                 self.local_transmission[(i, j)] = S_reduced.tocsr()
 
     def apply_scatter(self, x: PETSc.Vec, y: PETSc.Vec):
@@ -128,8 +135,8 @@ class Formulation:
                 mass_g = self.local_masses[(i, j)] @ y_numpy[local_offset:local_offset+len(dofs)]
                 rhs[dofs] += mass_g
 
-            u_i = spsolve(self.volume_mats[iidx], rhs)
-
+            #u_i = spsolve(self.volume_mats[iidx], rhs)
+            u_i = self.volume_fact[iidx].solve(rhs)
             for j in dom.all_neighboring_partitions():
                 # find idx in the offsets list
                 for idx in range(len(offsets[0])):
@@ -138,7 +145,8 @@ class Formulation:
                         break
                 dofs = dom.dofs_on_interface(j)
                 su = self.local_transmission[(i, j)] @ u_i[dofs]
-                m_inv_su = spsolve(self.local_masses[(i, j)], su)
+                #m_inv_su = spsolve(self.local_masses[(i, j)], su)
+                m_inv_su = self.mass_fact[(i, j)].solve(su)
                 output[local_offset:local_offset+len(dofs)] += 2 * m_inv_su
 
 
@@ -164,7 +172,8 @@ class Formulation:
             print("For domain ", i, " g-size=", g_size)
 
             rhs = f[i]
-            u_i = spsolve(self.volume_mats[iidx], rhs)
+            #u_i = spsolve(self.volume_mats[iidx], rhs)
+            u_i = self.volume_fact[iidx].solve(rhs)
             for j in dom.all_neighboring_partitions():
                 # find idx in the offsets list
                 for idx in range(len(offsets[0])):
@@ -172,7 +181,8 @@ class Formulation:
                         local_offset = offsets[2][idx]
                         break
                 dofs = dom.dofs_on_interface(j)
-                m_inv_su = spsolve(self.local_masses[(i, j)], self.local_transmission[(i, j)] @ u_i[dofs])
+                #m_inv_su = spsolve(self.local_masses[(i, j)], self.local_transmission[(i, j)] @ u_i[dofs])
+                m_inv_su = self.mass_fact[(i, j)].solve( self.local_transmission[(i, j)] @ u_i[dofs])
                 x_numpy[local_offset:local_offset+len(dofs)] = m_inv_su
 
         x.setArray(x_numpy)
@@ -200,9 +210,9 @@ class Formulation:
 if __name__ == "__main__":
 
 
-    ndom = 8
+    ndom = 200
     subdomains_on_rank = SubdomainsOnMyRank(ndom)
-    create_square(0.04, ndom)
+    create_square(0.01, ndom)
     for dom in subdomains_on_rank.subdomains:
         dom.init_all()
 
