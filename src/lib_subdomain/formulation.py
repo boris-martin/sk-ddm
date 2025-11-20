@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple
 from typing import cast
 # Import the PETSc module
 from petsc4py import PETSc
-
+from line_profiler import profile
 from src.lib_subdomain.distributed_domain_set import SubdomainsOnMyRank
 from src.lib_subdomain.load_local_mesh import LocalGeometry
 from src.tuto.mesh_helpers import create_square
@@ -71,6 +71,7 @@ class Formulation:
 
         self.volume_fact: List = []
         self.mass_fact: dict[tuple[int, int], object] = {}
+        self.offset_i_cache: Dict[int, int] | None = None
 
     def assemble_volume(self):
         self.volume_mats = []
@@ -107,7 +108,7 @@ class Formulation:
                 self.local_masses[(i, j)] = M_reduced.tocsr()
                 self.mass_fact[(i, j)] = splu(M_reduced.tocsr())
                 self.local_transmission[(i, j)] = S_reduced.tocsr()
-
+    @profile
     def apply_scatter(self, x: PETSc.Vec, y: PETSc.Vec):
         """
         Scatter from global g-vector x to local subdomain vectors y.
@@ -117,10 +118,12 @@ class Formulation:
         output = -y_numpy.copy()
 
         offsets = self.domains.local_offset_list()
+        if self.offset_i_cache is None:
+            self.offset_i_cache = {i: self.domains.offset_of_domain(i) for i in self.domains.partitions}
 
         for iidx, i in enumerate(self.domains.partitions):
             dom = self.domains.subdomains[iidx]
-            offset = self.domains.offset_of_domain(i)
+            offset = self.offset_i_cache[i]
             g_size = self.domains.g_vector_size_for_domain(i)
             # print("For domain ", i, " g-size=", g_size)
 
