@@ -1,3 +1,10 @@
+
+# We first import petsc4py and sys to initialize PETSc
+import sys, petsc4py
+petsc4py.init(sys.argv)
+# Import the PETSc module
+from petsc4py import PETSc
+
 from src.lib_subdomain.distributed_domain_set import SubdomainsOnMyRank
 from src.lib_subdomain.load_local_mesh import LocalGeometry
 from src.tuto.mesh_helpers import create_square
@@ -10,7 +17,6 @@ from numpy import conjugate
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator, spsolve
 
-import petsc4py.PETSc as PETSc
 
 @BilinearForm
 def helmholtz(u, v, w):
@@ -106,7 +112,7 @@ class Formulation:
             dom = self.domains.subdomains[iidx]
             offset = self.domains.offset_of_domain(i)
             g_size = self.domains.g_vector_size_for_domain(i)
-            print("For domain ", i, " g-size=", g_size)
+            #print("For domain ", i, " g-size=", g_size)
 
             rhs = np.zeros(dom.volume_size(), dtype=np.complex128)
             for j in dom.all_neighboring_partitions():
@@ -116,16 +122,9 @@ class Formulation:
                         local_offset = offsets[2][idx]
                         break
                 dofs = dom.dofs_on_interface(j)
-                print(dofs)
-                print("Dofs shape is ", len(dofs))
-                print("Local mss shape is ", self.local_masses[(i, j)].shape)
-                print("y_numpy shape is ", y_numpy[local_offset:local_offset+len(dofs)].shape)
                 mass_g = self.local_masses[(i, j)] @ y_numpy[local_offset:local_offset+len(dofs)]
                 rhs[dofs] += mass_g
-                if (PETSc.COMM_WORLD.rank == 0):
-                    print(f"Applying interface from {j} to {i} at local offset {local_offset} (global offset {offset + local_offset})")
 
-            print("Attempting to read entry ", iidx, " of volume mats of size ", len(self.volume_mats))
             u_i = spsolve(self.volume_mats[iidx], rhs)
 
             y_numpy[:] *= -1 # g_ij = -g_ij
@@ -144,8 +143,62 @@ class Formulation:
 
         y.setArray(y_numpy)
 
+    def compute_substructured_rhs(self, f: dict[int, np.ndarray]) -> PETSc.Vec:
+        """
+        Compute the substructured RHS vector from local volume RHS f.
+        """
+        for i, src in f.items():
+            assert src.shape == (self.domains.find_domain(i).volume_size(),)
+            assert i in self.domains.partitions
+        
+        x = self.domains.create_petsc_g_vector()
+        x_numpy = x.getArray()
+        offsets = self.domains.local_offset_list()
+    
+        for iidx, i in enumerate(self.domains.partitions):
+            dom = self.domains.subdomains[iidx]
+            offset = self.domains.offset_of_domain(i)
+            g_size = self.domains.g_vector_size_for_domain(i)
+            print("For domain ", i, " g-size=", g_size)
+
+            rhs = f[i]
+            u_i = spsolve(self.volume_mats[iidx], rhs)
+            for j in dom.all_neighboring_partitions():
+                # find idx in the offsets list
+                for idx in range(len(offsets[0])):
+                    if offsets[0][idx] == i and offsets[1][idx] == j:
+                        local_offset = offsets[2][idx]
+                        break
+                dofs = dom.dofs_on_interface(j)
+                m_inv_su = spsolve(self.local_masses[(i, j)], self.local_transmission[(i, j)] @ u_i[dofs])
+                x_numpy[local_offset:local_offset+len(dofs)] = m_inv_su
+
+        x.setArray(x_numpy)
+        return x
+    
+    def mult(self, mat, x, y):
+        """
+        PETSc MatMult operation: y = (I - T) * x
+        """
+        # y = 0
+        y.zeroEntries()
+        # y = x
+        y.axpy(1.0, x)
+
+        # temp = T(x)
+        temp = y.duplicate()
+        self.apply_scatter(x, temp)
+
+        # y = x - temp
+        y.axpy(-1.0, temp)
+        temp.destroy()
+
+
+
 if __name__ == "__main__":
-    ndom = 8
+
+
+    ndom = 3
     subdomains_on_rank = SubdomainsOnMyRank(ndom)
     create_square(0.04, ndom)
     for dom in subdomains_on_rank.subdomains:
@@ -161,8 +214,28 @@ if __name__ == "__main__":
     formulation = Formulation(subdomains_on_rank, k=10.0)
     formulation.assemble_volume()
     formulation.assemble_interface_mats()
-    x = subdomains_on_rank.create_petsc_g_vector()
-    x.set(PETSc.COMM_WORLD.rank+1)
-    y = x.duplicate()
-    formulation.apply_scatter(x, y)
-    y.view()
+
+    f: dict[int, np.ndarray] = {}
+    for i in subdomains_on_rank.partitions:
+        dom = subdomains_on_rank.find_domain(i)
+        f[i] = np.ones(dom.volume_size(), dtype=np.complex128) if i == 2 else np.zeros(dom.volume_size(), dtype=np.complex128)
+    rhs = formulation.compute_substructured_rhs(f)
+    #rhs.view()
+
+    x = rhs.duplicate()
+    # create a mat shell
+    A = PETSc.Mat().createPython([(rhs.getLocalSize(), rhs.getSize()), (rhs.getLocalSize(), rhs.getSize())], context=formulation)
+    A.setType(PETSc.Mat.Type.PYTHON)
+    A.setPythonContext(formulation)
+    A.setUp()
+
+    A.mult(rhs, x)
+    #x.view()
+
+    ksp = PETSc.KSP().create()
+    ksp.setOperators(A)
+    ksp.setFromOptions()
+    ksp.solve(rhs, x)
+
+
+   
