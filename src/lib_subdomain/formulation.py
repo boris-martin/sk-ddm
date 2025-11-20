@@ -53,7 +53,7 @@ def transmission(u, v, w):
         1.0 + np.cos(x[0] * 4 * 3.1415) ** 2
     ) * (~x_left)
     k_eff = k # ignore heterogeneity for transmission
-    return np.complex128(-1j * k_eff * u * conjugate(v))
+    return np.complex128(-(1j-0.1)* k_eff * u * conjugate(v))
 
 
 # Time convention: S = iku, we remove S_gamma on the boundary (-dnu v term)
@@ -105,6 +105,7 @@ class Formulation:
         """
         self.swap.mult(x, y)
         y_numpy = y.getArray()
+        output = -y_numpy.copy()
 
         offsets = self.domains.local_offset_list()
 
@@ -127,7 +128,6 @@ class Formulation:
 
             u_i = spsolve(self.volume_mats[iidx], rhs)
 
-            y_numpy[:] *= -1 # g_ij = -g_ij
             for j in dom.all_neighboring_partitions():
                 # find idx in the offsets list
                 for idx in range(len(offsets[0])):
@@ -137,11 +137,11 @@ class Formulation:
                 dofs = dom.dofs_on_interface(j)
                 su = self.local_transmission[(i, j)] @ u_i[dofs]
                 m_inv_su = spsolve(self.local_masses[(i, j)], su)
-                y_numpy[local_offset:local_offset+len(dofs)] += 2 * m_inv_su
+                output[local_offset:local_offset+len(dofs)] += 2 * m_inv_su
 
 
 
-        y.setArray(y_numpy)
+        y.setArray(output)
 
     def compute_substructured_rhs(self, f: dict[int, np.ndarray]) -> PETSc.Vec:
         """
@@ -198,7 +198,7 @@ class Formulation:
 if __name__ == "__main__":
 
 
-    ndom = 3
+    ndom = 8
     subdomains_on_rank = SubdomainsOnMyRank(ndom)
     create_square(0.04, ndom)
     for dom in subdomains_on_rank.subdomains:
