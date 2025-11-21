@@ -3,8 +3,7 @@ import scipy.sparse as sp
 from scipy.sparse.linalg import LinearOperator
 from skfem import asm
 
-from src.lib_subdomain.formulation import (absorbing, helmholtz, mass_bnd,
-                                           transmission)
+from src.lib_subdomain.formulation import (absorbing, helmholtz, mass_bnd)
 from src.lib_subdomain.load_local_mesh import LocalGeometry
 
 
@@ -25,7 +24,7 @@ class LocalDTN:
     
     def compute_A_neuman(self) -> sp.csr_matrix:
         A = asm(helmholtz,  self.domain.volume_basis, k=self.k)
-        if True and self.domain.has_gamma():
+        if self.domain.has_gamma():
             A += asm(absorbing, self.domain.gamma_basis, k=self.k)
         return A
     
@@ -40,7 +39,7 @@ class LocalDTN:
         print(f"M_sigma Rank: {M_rank} out of {self.M_sigma.shape[0]}")
         # ---
         
-        vals, vecs = eigs(self.A_neuman, M=self.M_sigma, k=nev, which='LM', sigma=0)
+        vals, vecs = eigs(self.A_neuman.astype(np.complex128), M=self.M_sigma.astype(np.complex128), k=nev, which='LM', sigma=0+0j)
         if max(np.abs(vals)) > 1e10:
             print("Warning: Large eigenvalues detected, possible singularity in M_sigma.")
 
