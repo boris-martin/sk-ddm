@@ -20,6 +20,8 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator, spsolve, splu
 
 
+import matplotlib.pyplot as plt
+
 @BilinearForm
 def helmholtz(u, v, w):
     k = w["k"]
@@ -214,12 +216,34 @@ class Formulation:
         y.axpy(-1.0, temp)
         temp.destroy()
 
+    def build_dtn_coarse(self, nev: int):
+        for dom in self.domains.subdomains:
+            local_dtn = LocalDTN(dom, self.k)
+            local_dtn.build_basis(nev)
+            dom.local_dtn = local_dtn
+
+        g_size_on_rank = self.domains.g_vector_local_size()
+        coarse_size = nev * len(self.domains.subdomains)
+        self.Z = np.zeros((g_size_on_rank, coarse_size), dtype=np.complex128)
+        for iidx, dom in enumerate(self.domains.subdomains):
+            for j in dom.all_neighboring_partitions():
+                dofs = dom.dofs_on_interface(j)
+                offset = self.offset_ij_cache[(dom.partition, j)]
+                nev_dom = dom.local_dtn.get_eigvecs().shape[1]
+                for ev in range(nev_dom):
+                    self.Z[offset:offset+len(dofs), iidx * nev + ev] = dom.local_dtn.get_eigvecs()[dofs, ev]
+                
+        plt.spy(self.Z, markersize=1)
+        plt.show()
+
+
+        print("Coarse basis Z shape:", self.Z.shape)
 
 
 if __name__ == "__main__":
 
     from src.lib_subdomain.local_dtn import LocalDTN
-    ndom = 40
+    ndom = 4
     subdomains_on_rank = SubdomainsOnMyRank(ndom)
     create_square(0.01, ndom)
     for dom in subdomains_on_rank.subdomains:
@@ -242,9 +266,7 @@ if __name__ == "__main__":
         f[i] = np.ones(dom.volume_size(), dtype=np.complex128) if i == 2 else np.zeros(dom.volume_size(), dtype=np.complex128)
     rhs = formulation.compute_substructured_rhs(f)
 
-    for dom in subdomains_on_rank.subdomains:
-        x = LocalDTN(dom, k=10.0)
-        x.build_basis(nev=15)
+    formulation.build_dtn_coarse(nev=10)
 
     #rhs.view()
 
