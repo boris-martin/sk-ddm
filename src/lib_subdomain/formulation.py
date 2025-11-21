@@ -143,7 +143,8 @@ class Formulation:
             for j in dom.all_neighboring_partitions():
                 local_offset = self.offset_ij_cache[(i, j)]
                 dofs = cast(List[int], dom.dofs_on_interface(j))
-                mass_g = self.local_masses[(i, j)] @ y_numpy[local_offset:local_offset+len(dofs)]
+                local_mass = self.local_masses[(i, j)]
+                mass_g = local_mass @ y_numpy[local_offset:local_offset+len(dofs)]
                 rhs[dofs] += mass_g
 
             #u_i = spsolve(self.volume_mats[iidx], rhs)
