@@ -44,4 +44,10 @@ class LocalDTN:
         if max(np.abs(vals)) > 1e10:
             print("Warning: Large eigenvalues detected, possible singularity in M_sigma.")
 
-        print("Computed local DTN basis eigenvalues:", vals)
+        self.vals = vals
+        self.vecs = vecs
+
+    def get_eigvals(self):
+        return self.vals
+    def get_eigvecs(self):
+        return self.vecs
