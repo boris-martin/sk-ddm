@@ -23,6 +23,7 @@ class LocalGeometry:
         self.volume_basis: skfem.Basis | None = None
         self.gamma_basis: skfem.FacetBasis | None = None
         self.sigma_basis: dict[int, skfem.FacetBasis] = {}
+        self.all_sigma_basis: skfem.FacetBasis | None = None
 
         self.dof_interface_dict: dict[int, np.ndarray] = {}
 
@@ -70,6 +71,8 @@ class LocalGeometry:
         self.gamma_basis = skfem.FacetBasis(self.mesh, skfem.ElementTriP1(), facets=self.gamma_facets) if len(self.gamma_facets) > 0 else None
         for j, facets in self.sigma_facets.items():
             self.sigma_basis[j] = skfem.FacetBasis(self.mesh, skfem.ElementTriP1(), facets=list(facets))
+
+        self.all_sigma_basis = skfem.FacetBasis(self.mesh, skfem.ElementTriP1(), facets=self.all_sigma_facets)
 
     def dofs_on_interface(self, j: int) -> np.ndarray:
         assert j in self.sigma_basis, f"No sigma basis for partition {j}"

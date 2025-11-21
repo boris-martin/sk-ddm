@@ -218,8 +218,8 @@ class Formulation:
 
 if __name__ == "__main__":
 
-
-    ndom = 200
+    from src.lib_subdomain.local_dtn import LocalDTN
+    ndom = 40
     subdomains_on_rank = SubdomainsOnMyRank(ndom)
     create_square(0.01, ndom)
     for dom in subdomains_on_rank.subdomains:
@@ -241,6 +241,11 @@ if __name__ == "__main__":
         dom = subdomains_on_rank.find_domain(i)
         f[i] = np.ones(dom.volume_size(), dtype=np.complex128) if i == 2 else np.zeros(dom.volume_size(), dtype=np.complex128)
     rhs = formulation.compute_substructured_rhs(f)
+
+    for dom in subdomains_on_rank.subdomains:
+        x = LocalDTN(dom, k=10.0)
+        x.build_basis(nev=15)
+
     #rhs.view()
 
     x = rhs.duplicate()
