@@ -345,13 +345,81 @@ class Formulation:
         print(f"Built Z Operator. Local dims: {local_rows}x{local_cols}")
         return Z_mat
 
+    def build_ZAZ_dense(self):
+        """
+        Builds E = Z* A Z has a dense numpy array on each rank. We first build an identity matrix (dense) of coarse_size,
+        apply Z to it, then A to each column, then Z* to the result.
+        
+        The dense representation of Z (Z_dense) is built by computing Z * Identity column-wise.
+        """
+        assert hasattr(self, 'Z_op'), "Z operator not built. Run build_Z_operator() first."
+        assert hasattr(self, 'coarse_offsets'), "Coarse metadata missing. Run build_dtn_coarse first."
+        
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        
+        # --- Dimensions ---
+        local_coarse_size = self.coarse_size
+        total_coarse_size = self.total_coarse_size
+        
+        # 1. Identity Matrix Setup
+        # Size: (local_coarse_size, total_coarse_size) x (total_coarse_size, total_coarse_size)
+        identity_dense = PETSc.Mat().createDense(((local_coarse_size, total_coarse_size), (total_coarse_size, total_coarse_size)), comm=PETSc.COMM_WORLD)
+        rbegin, rend = identity_dense.getOwnershipRange()
+        
+        # Fill local part of identity matrix (using NumPy view for performance)
+        identity_array = identity_dense.getDenseArray()
+        for i in range(rbegin, rend):
+            # i - rbegin is the local row index
+            identity_array[i - rbegin, i] = 1.0 + 0j
+        
+        identity_dense.assemble()
+        identity_dense.view()
+        print(f"Rank {rank}: Identity view completed.")
+        
+        # 2. Z_dense Matrix Computation: Z_dense = Z_op * identity_dense
+        # Use MatMatMult to compute the product, letting PETSc create the optimal result matrix C.
+        # This replaces the need for the manual column-by-column loop.
+        # Use MAT_INITIAL_MATRIX to ensure the result is created.
+        
+        """Z_dense = self.Z_op.matMatMult(
+            identity_dense, 
+            PETSc.Mat.Structure.DIFFERENT_NONZERO_PATTERN, 
+            1.0 # Fill ratio (irrelevant for dense output, but required)
+        )"""
+        Z_dense = self.Z_op.matMult(identity_dense, None)
+        # build a shell using self as A
+        local_g_size = self.domains.g_vector_local_size()
+        shell = PETSc.Mat().createPython(((local_g_size, PETSc.DETERMINE), (local_g_size, PETSc.DETERMINE)), context=self)
+        shell.setType(PETSc.Mat.Type.PYTHON)
+        shell.setPythonContext(self)
+        shell.setUp()
+        # 3. Apply A to each column of Z_dense
+        AZ_dense = shell.matMult(Z_dense, None)
+        #AZ_dense.view()
+        # Norm of each col of AZ:
+        AZ_array = AZ_dense.getDenseArray()
+        for col in range(AZ_array.shape[1]):
+            col_norm = np.linalg.norm(AZ_array[:, col])
+            print(f"Rank {rank}: Norm of AZ column {col}: {col_norm}")
+
+
+        # ZAZ has local size (local_coarse_size, local_coarse_size)
+        ZAZ = PETSc.Mat().createDense(((local_coarse_size, PETSc.DETERMINE), (local_coarse_size, PETSc.DETERMINE)), comm=PETSc.COMM_WORLD)
+        self.Z_op.getPythonContext().multHermitianTransposeMat(self.Z, AZ_dense, ZAZ)
+
+        for col in range(local_coarse_size):
+            col_norm = np.linalg.norm(ZAZ.getDenseArray()[:, col])
+            print(f"Rank {rank}: Norm of ZAZ column {col}: {col_norm}")
+        ZAZ.view()
+
 
 if __name__ == "__main__":
 
     from src.lib_subdomain.local_dtn import LocalDTN
     ndom = 8
     subdomains_on_rank = SubdomainsOnMyRank(ndom)
-    create_square(0.025, ndom)
+    create_square(0.07, ndom)
     for dom in subdomains_on_rank.subdomains:
         dom.init_all()
 
@@ -372,7 +440,7 @@ if __name__ == "__main__":
         f[i] = np.ones(dom.volume_size(), dtype=np.complex128) if i == 2 else np.zeros(dom.volume_size(), dtype=np.complex128)
     rhs = formulation.compute_substructured_rhs(f)
 
-    formulation.build_dtn_coarse(nev=10)
+    formulation.build_dtn_coarse(nev=4)
     Z = formulation.build_Z_operator()
 
     # 1. Create Vectors
@@ -421,6 +489,10 @@ if __name__ == "__main__":
     norm_2 = MPI.COMM_WORLD.allreduce(norm_2, op=MPI.SUM)
     print("First column norm (global):", math.sqrt(norm_2))
 
+    formulation.build_ZAZ_dense()
+    #formulation.build_ZAZ_petsc()
+
+    #Q = formulation.build_deflation_operator()
 
     #rhs.view()
 
