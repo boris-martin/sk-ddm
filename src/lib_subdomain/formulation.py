@@ -235,6 +235,7 @@ class Formulation:
                     self.Z[offset:offset+len(dofs), iidx * nev + ev] = dom.local_dtn.get_eigvecs()[dofs, ev]
                 
         self.coarse_size = coarse_size
+        self.total_coarse_size = MPI.COMM_WORLD.allreduce(coarse_size, op=MPI.SUM)
 
         print("Coarse basis Z shape:", self.Z.shape)
     
