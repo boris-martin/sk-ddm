@@ -218,14 +218,33 @@ class Formulation:
         temp.destroy()
 
     def build_dtn_coarse(self, nev: int):
+        # Build local DTN bases (Z columns)
         for dom in self.domains.subdomains:
             local_dtn = LocalDTN(dom, self.k)
             local_dtn.build_basis(nev)
             dom.local_dtn = local_dtn
 
         g_size_on_rank = self.domains.g_vector_local_size()
-        coarse_size = nev * len(self.domains.subdomains)
-        self.Z = np.zeros((g_size_on_rank, coarse_size), dtype=np.complex128)
+        
+        # Local size of the coarse space on this rank (Coarse Columns)
+        local_coarse_size = nev * len(self.domains.subdomains)
+        self.Z = np.zeros((g_size_on_rank, local_coarse_size), dtype=np.complex128)
+        
+        # --- NEW: Calculate and Store Global Coarse Metadata ---
+        comm = MPI.COMM_WORLD
+        
+        # 1. Store local size for indexing Z matrix rows
+        self.coarse_size = local_coarse_size 
+        
+        # 2. Gather sizes (counts) from all ranks
+        self.coarse_counts = np.array(comm.allgather(local_coarse_size), dtype=np.int32)
+        
+        # 3. Calculate global offsets (prefix sums)
+        self.coarse_offsets = np.cumsum(np.concatenate(([0], self.coarse_counts)))
+        print("Coarse offsets:", self.coarse_offsets)
+        self.total_coarse_size = self.coarse_offsets[-1]
+
+        # 4. Fill Z (Prolongation matrix)
         for iidx, dom in enumerate(self.domains.subdomains):
             for j in dom.all_neighboring_partitions():
                 dofs = dom.dofs_on_interface(j)
@@ -234,9 +253,6 @@ class Formulation:
                 for ev in range(nev_dom):
                     self.Z[offset:offset+len(dofs), iidx * nev + ev] = dom.local_dtn.get_eigvecs()[dofs, ev]
                 
-        self.coarse_size = coarse_size
-        self.total_coarse_size = MPI.COMM_WORLD.allreduce(coarse_size, op=MPI.SUM)
-
         print("Coarse basis Z shape:", self.Z.shape)
     
     def build_Z_operator(self):
