@@ -233,19 +233,81 @@ class Formulation:
                 for ev in range(nev_dom):
                     self.Z[offset:offset+len(dofs), iidx * nev + ev] = dom.local_dtn.get_eigvecs()[dofs, ev]
                 
-        plt.spy(self.Z, markersize=1)
-        plt.show()
 
 
         print("Coarse basis Z shape:", self.Z.shape)
+    
+    def build_Z_operator(self):
+        """
+        Builds the PETSc operator Z mapping from Coarse Space -> Fine Space.
+        Also supports Z* (Hermitian Transpose) mapping Fine Space -> Coarse Space.
+        """
+        assert hasattr(self, 'Z'), "Coarse basis Z not built yet."
+
+        class ZContext:
+            def __init__(ctx, Z_numpy):
+                # Z_numpy shape: (Local_Fine_Size, Local_Coarse_Size)
+                ctx.Z = Z_numpy
+
+            def mult(ctx, mat, x, y):
+                """ y = Z * x """
+                # 1. Get Read-Only access to input vector x
+                # This bypasses the PETSc lock check but returns a standard numpy array
+                x_arr = x.getArray(readonly=True)
+                
+                # 2. Get Write access to output vector y
+                y_arr = y.getArray()
+                
+                # 3. Perform computation
+                # (Fine, Coarse) @ (Coarse) -> (Fine)
+                np.dot(ctx.Z, x_arr, out=y_arr)
+                
+                # Note: No explicit 'release' needed for standard getArray in Python, 
+                # but cleaning up references is good practice.
+
+            def multHermitianTranspose(ctx, mat, x, y):
+                """ y = Z^H * x (Adjoint) """
+                # 1. Get Read-Only access to input vector x
+                x_arr = x.getArray(readonly=True)
+                
+                # 2. Get Write access to output vector y
+                y_arr = y.getArray()
+                
+                # 3. Perform computation
+                # (Coarse, Fine) @ (Fine) -> (Coarse)
+                # Z.conj().T @ x
+                # We use slice assignment [:] to ensure we write into the PETSc buffer
+                y_arr[:] = ctx.Z.conj().T @ x_arr
+
+            # Optional: If you strictly need Z^T (non-conjugate)
+            def multTranspose(ctx, mat, x, y):
+                x_arr = x.getArray(readonly=True)
+                y_arr = y.getArray()
+                y_arr[:] = ctx.Z.T @ x_arr
+
+        # 1. Dimensions
+        local_rows = self.Z.shape[0] 
+        local_cols = self.Z.shape[1]
+
+        # 2. Create the PETSc Matrix
+        Z_mat = PETSc.Mat().createPython(
+            [(local_rows, PETSc.DECIDE), (local_cols, PETSc.DECIDE)], 
+            context=ZContext(self.Z),
+            comm=PETSc.COMM_WORLD
+        )
+        Z_mat.setUp()
+        
+        self.Z_op = Z_mat
+        print(f"Built Z Operator. Local dims: {local_rows}x{local_cols}")
+        return Z_mat
 
 
 if __name__ == "__main__":
 
     from src.lib_subdomain.local_dtn import LocalDTN
-    ndom = 4
+    ndom = 8
     subdomains_on_rank = SubdomainsOnMyRank(ndom)
-    create_square(0.01, ndom)
+    create_square(0.025, ndom)
     for dom in subdomains_on_rank.subdomains:
         dom.init_all()
 
@@ -267,6 +329,26 @@ if __name__ == "__main__":
     rhs = formulation.compute_substructured_rhs(f)
 
     formulation.build_dtn_coarse(nev=10)
+    Z = formulation.build_Z_operator()
+
+    # 1. Create Vectors
+    # Create a Coarse Vector (Input for Z)
+    x_coarse = Z.createVecRight() 
+    # Create a Fine Vector (Input for Z*)
+    x_fine = Z.createVecLeft()
+
+    # 2. Test Z * x_coarse -> y_fine
+    x_coarse.set(1.0 + 0j) # Fill with ones
+    y_fine = Z.createVecLeft()
+    Z.mult(x_coarse, y_fine)
+
+    # 3. Test Z* * x_fine -> y_coarse
+    x_fine.set(1.0 + 0j)
+    y_coarse = Z.createVecRight()
+    Z.multHermitian(x_fine, y_coarse)
+
+    print(f"Z mult output norm: {y_fine.norm()}")
+    print(f"Z* mult output norm: {y_coarse.norm()}")
 
     #rhs.view()
 
