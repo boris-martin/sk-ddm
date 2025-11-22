@@ -21,6 +21,7 @@ from scipy.sparse.linalg import LinearOperator, spsolve, splu
 
 
 import matplotlib.pyplot as plt
+from mpi4py import MPI
 
 @BilinearForm
 def helmholtz(u, v, w):
@@ -233,7 +234,7 @@ class Formulation:
                 for ev in range(nev_dom):
                     self.Z[offset:offset+len(dofs), iidx * nev + ev] = dom.local_dtn.get_eigvecs()[dofs, ev]
                 
-
+        self.coarse_size = coarse_size
 
         print("Coarse basis Z shape:", self.Z.shape)
     
@@ -278,6 +279,32 @@ class Formulation:
                 # Z.conj().T @ x
                 # We use slice assignment [:] to ensure we write into the PETSc buffer
                 y_arr[:] = ctx.Z.conj().T @ x_arr
+
+            # --- BATCHED / MATRIX OPERATIONS (BLAS Level 3) ---
+            def multMat(ctx, _, X, Y):
+                """ Y = Z * X (Matrix-Matrix multiplication) """
+                # X is input Dense Matrix (Coarse Size x N_vecs)
+                # Y is output Dense Matrix (Fine Size x N_vecs)
+                
+                # getDenseArray returns the local chunk of the dense matrix as a 2D NumPy array
+                X_arr = X.getDenseArray(readonly=True)
+                Y_arr = Y.getDenseArray()
+                
+                # Perform Dense Matrix-Matrix Multiplication (GEMM)
+                # (Fine, Coarse) @ (Coarse, N_vecs) -> (Fine, N_vecs)
+                np.matmul(ctx.Z, X_arr, out=Y_arr)
+
+            def multHermitianTransposeMat(ctx, mat, X, Y):
+                """ Y = Z^H * X (Matrix-Matrix multiplication) """
+                # X is input Dense Matrix (Fine Size x N_vecs)
+                # Y is output Dense Matrix (Coarse Size x N_vecs)
+                
+                X_arr = X.getDenseArray(readonly=True)
+                Y_arr = Y.getDenseArray()
+                
+                # (Coarse, Fine) @ (Fine, N_vecs) -> (Coarse, N_vecs)
+                # Use slice assignment to write into PETSc buffer
+                Y_arr[:] = ctx.Z.conj().T @ X_arr
 
             # Optional: If you strictly need Z^T (non-conjugate)
             def multTranspose(ctx, mat, x, y):
@@ -349,6 +376,34 @@ if __name__ == "__main__":
 
     print(f"Z mult output norm: {y_fine.norm()}")
     print(f"Z* mult output norm: {y_coarse.norm()}")
+
+    # Create a 5 columns dense matrix for testing batched operations. Output has G-shape
+    local_size = subdomains_on_rank.g_vector_local_size()
+    x_coarse_mat = PETSc.Mat().createDense(((formulation.coarse_size, PETSc.DETERMINE), (PETSc.DETERMINE, 5)), comm=PETSc.COMM_WORLD)
+    #x_coarse_mat.set(1.0 + 0j)
+    x_numpy = x_coarse_mat.getDenseArray()
+    x_numpy.fill(1.0 + 0j)
+
+    y_fine_mat = PETSc.Mat().createDense(((local_size, PETSc.DETERMINE), (PETSc.DETERMINE, 5)), comm=PETSc.COMM_WORLD)
+    Z.matMult(x_coarse_mat, y_fine_mat)
+    print("Z multMat output norm:", y_fine_mat.norm())
+    y_fine_col_1 = y_fine_mat.getDenseArray()[:, 0]
+    print("First column norm (local):", np.linalg.norm(y_fine_col_1))
+    norm_2 = np.linalg.norm(y_fine_col_1)**2
+    norm_2 = MPI.COMM_WORLD.allreduce(norm_2, op=MPI.SUM)
+    print("First column norm (global):", math.sqrt(norm_2))
+
+    # Adjoint batched
+    #Z.matMultHermitian(y_fine_mat, x_coarse_mat)
+    Z.getPythonContext().multHermitianTransposeMat(Z, y_fine_mat, x_coarse_mat)
+    print("Z* multMat output norm:", x_coarse_mat.norm())
+    # Norm of col 1
+    x_coarse_col_1 = x_coarse_mat.getDenseArray()[:, 0]
+    print("First column norm (local):", np.linalg.norm(x_coarse_col_1))
+    norm_2 = np.linalg.norm(x_coarse_col_1)**2
+    norm_2 = MPI.COMM_WORLD.allreduce(norm_2, op=MPI.SUM)
+    print("First column norm (global):", math.sqrt(norm_2))
+
 
     #rhs.view()
 
